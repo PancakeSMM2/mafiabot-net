@@ -8,7 +8,7 @@ using Discord;
 using Discord.WebSocket;
 using Discord.Commands;
 
-namespace discordbot
+namespace mafiabot
 {
     class Program
     {
@@ -88,6 +88,27 @@ namespace discordbot
                 context: context,
                 argPos: argPos,
                 services: null);
+        }
+    }
+
+    public class Bouncer
+    {
+        private readonly DiscordSocketClient _client;
+
+        // Constructor
+        public Bouncer(DiscordSocketClient client)
+        {
+            _client = client;
+        }
+
+        public void InstallBouncer()
+        {
+            _client.MessageReceived += CheckMessageAsync;
+        }
+
+        private Task CheckMessageAsync(SocketMessage messageParam)
+        {
+            throw new NotImplementedException();
         }
     }
 }

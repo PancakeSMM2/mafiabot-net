@@ -6,8 +6,9 @@ using System.Threading.Tasks;
 using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
+using static mafiabot.Functions;
 
-namespace discordbot
+namespace mafiabot
 {
     public class Commands : ModuleBase<SocketCommandContext>
     {
@@ -48,17 +49,17 @@ namespace discordbot
                 case "STREAMING":
                     await Context.Client.SetActivityAsync(new Game(newStatus, ActivityType.Streaming));
                     emotes[0] = new Emoji("✅");
-                    emotes[1] = new Emoji("🎮");
+                    emotes[1] = new Emoji("🎥");
                     break;
                 case "LISTENING":
                     await Context.Client.SetActivityAsync(new Game(newStatus, ActivityType.Listening));
                     emotes[0] = new Emoji("✅");
-                    emotes[1] = new Emoji("🎮");
+                    emotes[1] = new Emoji("🎧");
                     break;
                 case "WATCHING":
                     await Context.Client.SetActivityAsync(new Game(newStatus, ActivityType.Watching));
                     emotes[0] = new Emoji("✅");
-                    emotes[1] = new Emoji("🎮");
+                    emotes[1] = new Emoji("📺");
                     break;
                 default:
                     await Context.Client.SetActivityAsync(new Game(statusType + " " + newStatus));
@@ -83,5 +84,19 @@ namespace discordbot
             await Context.Message.AddReactionsAsync(emotes);
         }
 
+        [Command("imagesonly")]
+        [Summary("Sets a channel to be images only.")]
+        public async Task ImagesOnlyAsync()
+        {
+            await Task.Run(async () =>
+            {
+                bool removed = await ToggleSnowflakeFromJSONAsync(Context.Channel.Id, "./imagesonly.json");
+                IEmote[] emotes = new IEmote[2];
+                if (removed) emotes[0] = new Emoji("✅");
+                else emotes[0] = new Emoji("🚫");
+                emotes[1] = new Emoji("💬");
+                await Context.Message.AddReactionsAsync(emotes);
+            });
+        }
     }
 }
