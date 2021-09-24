@@ -361,3 +361,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/discordbot/config.json
+/discordbot/Avatar.png
+/discordbot/Translate Bot-e06c3e6de411.json
+/discordbot/translate-bot-303602-bfbffa020319.json
+/discordbot/purgeChannels.json
+/discordbot/logChannels.json
+/discordbot/prideFlags.json
+/discordbot/archivalChannels.json
