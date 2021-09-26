@@ -13,6 +13,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using static Mafiabot.Functions;
+using static Mafiabot.Program;
 
 namespace Mafiabot
 {
@@ -20,21 +21,82 @@ namespace Mafiabot
     {
         // Start MainAsync() on startup
         public static void Main()
-        => new Program().MainAsync().GetAwaiter().GetResult();
+        => MainAsync().GetAwaiter().GetResult();
 
         public static DiscordSocketClient _client; // The client
         public static CommandService _commands; // The command service
 
-        public async Task MainAsync()
+        public static async Task MainAsync()
         {
+            // Make sure that required files exist
+            string configPath = Environment.GetEnvironmentVariable("mafiabot-configPath") ?? "config.json"; // If config path has not been set via the mafiabot-configPath environment variable, default to "config.json"
+            if (!File.Exists(configPath)) // If the config file does not exist
+            {
+                // Create a default config
+                Dictionary<string, dynamic> defaultConfig = new();
+                defaultConfig.Add("DefaultAvatarPath", "Avatar.png"); // Default file path
+                defaultConfig.Add("ArchivalChannelsPath", "archivalChannels.json"); // Default file path
+                defaultConfig.Add("ImagesOnlyPath", "imagesOnly.json"); // Default file path
+                defaultConfig.Add("LogChannelsPath", "logChannels.json"); // Default file path
+                defaultConfig.Add("PrideFlagsPath", "prideFlags.json"); // Default file path
+
+                defaultConfig.Add("Token", "YOUR-TOKEN-HERE"); // Field to input the twitch bot token
+                defaultConfig.Add("GoogleProjectId", "YOUR-PROJECT-ID-HERE"); // Field to input the google project ID
+                defaultConfig.Add("GoogleKey", "YOUR-GOOGLE-KEY-FILE-PATH-HERE"); // Field to input the google key's file path
+
+                // Create and write text to the file
+                File.WriteAllText(configPath, JsonConvert.SerializeObject(defaultConfig));
+
+                // Send a line to the console
+                Console.WriteLine($"No config file was found. A default one has been created at {configPath}.\nYou are required to input a few fields, such as your discord bot token and google key file path.\nThis program will automatically close in 60 seconds.");
+                await Task.Delay(60000); // Delay 60 seconds
+                // Stop the program
+                return;
+            }
+
+            // If there is no archival channels file
+            if (!File.Exists(Config.ArchivalChannelsPath))
+            {
+                // Create and write to the file
+                File.WriteAllText(Config.ArchivalChannelsPath, JsonConvert.SerializeObject(new Dictionary<ulong, ulong>()));
+            }
+
+            // If there is no images only file
+            if (!File.Exists(Config.ImagesOnlyPath))
+            {
+                // Create and write to the file
+                File.WriteAllText(Config.ImagesOnlyPath, JsonConvert.SerializeObject(Array.Empty<ulong>()));
+            }
+
+            // If there is no log channels file
+            if (!File.Exists(Config.LogChannelsPath))
+            {
+                // Create and write to the file
+                File.WriteAllText(Config.LogChannelsPath, JsonConvert.SerializeObject(Array.Empty<ulong>()));
+            }
+
+            // If there is no pride flags file
+            if (!File.Exists(Config.PrideFlagsPath))
+            {
+                // Create and write to the file
+                File.WriteAllText(Config.PrideFlagsPath, JsonConvert.SerializeObject(Array.Empty<PrideFlag>()));
+            }
+
+            // If there is no purge channels file
+            if (!File.Exists(Config.PurgeChannelsPath))
+            {
+                // Create and write to the file
+                File.WriteAllText(Config.PurgeChannelsPath, JsonConvert.SerializeObject(Array.Empty<ulong>()));
+            }
+
             _client = new DiscordSocketClient(new DiscordSocketConfig()
             {
-                ExclusiveBulkDelete = false
+                ExclusiveBulkDelete = false // Determines whether bulk deletes will be excluded from the MessageDeleted event
             }); // Create the client
             _commands = new CommandService(new CommandServiceConfig()
             {
-                IgnoreExtraArgs = true,
-                CaseSensitiveCommands = false
+                IgnoreExtraArgs = true, // Whether to ignore extra provided parameters for commands
+                CaseSensitiveCommands = false // Whether commands should be case-sensitive
             }); // Create the command service
 
             CommandHandler handler = new(_client, _commands); // Create the command handler
@@ -122,7 +184,7 @@ namespace Mafiabot
                 try
                 {
                     // Get all of the log channel IDs
-                    ulong[] channels = await GetUlongsFromJSONAsync("./logChannels.json");
+                    ulong[] channels = await GetUlongsFromJSONAsync(Config.LogChannelsPath);
 
                     // Create an embed
                     EmbedBuilder embed = new EmbedBuilder()
@@ -236,12 +298,24 @@ namespace Mafiabot
 
                 // Set all properties to the loaded config's properties
                 DefaultAvatarPath = loaded["DefaultAvatarPath"];
+                ArchivalChannelsPath = loaded["ArchivalChannelsPath"];
+                ImagesOnlyPath = loaded["ImagesOnlyPath"];
+                LogChannelsPath = loaded["LogChannelsPath"];
+                PrideFlagsPath = loaded["PrideFlagsPath"];
+                PurgeChannelsPath = loaded["PurgeChannelsPath"];
+
                 Token = loaded["Token"];
                 GoogleProjectId = loaded["GoogleProjectId"];
                 GoogleKey = loaded["GoogleKey"];
             }
 
             public static string DefaultAvatarPath; // The file path to the default avatar
+            public static string ArchivalChannelsPath; // The file path to the archival channels
+            public static string ImagesOnlyPath; // The file path to the images only channels
+            public static string LogChannelsPath; // The file path to the log channels
+            public static string PrideFlagsPath; // The file path to the pride flags
+            public static string PurgeChannelsPath; // The file path to the purge channels
+
             public static string Token; // The bot's token
             public static string GoogleProjectId; // The Google Cloud project ID
             public static string GoogleKey; // The key file path for interaction with Google Cloud Translate
@@ -335,7 +409,7 @@ namespace Mafiabot
                 if (message.Channel is not SocketGuildChannel channel) return; // If the message wasn't sent in a guild channel, return.
 
                 // Check whether the channel the message was sent in is marked images only
-                bool inImagesOnlyChannel = await CheckUlongFromJSONAsync(channel.Id, "imagesonly.json");
+                bool inImagesOnlyChannel = await CheckUlongFromJSONAsync(channel.Id, Config.ImagesOnlyPath);
                 // If it is in an ImagesOnly channel, wait 3 seconds (so that embeds have a chance to load)
                 if (inImagesOnlyChannel)
                 {

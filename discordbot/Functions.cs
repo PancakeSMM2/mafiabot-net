@@ -250,7 +250,7 @@ namespace Mafiabot
             return await Task.Run(() =>
             {
                 // Get the content from prideFlags.json
-                string content = File.ReadAllText("prideFlags.json");
+                string content = File.ReadAllText(Config.PrideFlagsPath);
                 // Deserialize the content to a pride flag array
                 PrideFlag[] flags = JsonConvert.DeserializeObject<PrideFlag[]>(content);
                 // Return that array

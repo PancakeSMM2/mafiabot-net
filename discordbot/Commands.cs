@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using static Mafiabot.Functions;
+using static Mafiabot.Program;
 
 namespace Mafiabot
 {
@@ -122,8 +123,8 @@ namespace Mafiabot
             // Execute asynchronously
             await Task.Run(async () =>
             {
-                // Toggle the channel the command was sent from in imagesonly.json, and store whether it was added or removed
-                bool added = await ToggleUlongFromJSONAsync(Context.Channel.Id, "imagesonly.json");
+                // Toggle the channel the command was sent from in imagesOnly.json, and store whether it was added or removed
+                bool added = await ToggleUlongFromJSONAsync(Context.Channel.Id, Config.ImagesOnlyPath);
 
                 // React with the emotes, ✅ if the channel is now images only, 🚫 if the channel is no longer images only, followed by 🖼
                 await Context.Message.AddReactionsAsync(new IEmote[]
@@ -476,7 +477,7 @@ namespace Mafiabot
             if (sourceChannelId is not ulong sourceId) return;
 
             // Assign the target channel to the source channel in archivalChannels.json
-            await AssignUlongToJSONDictionaryAsync(sourceId, targetChannelId, "./archivalChannels.json");
+            await AssignUlongToJSONDictionaryAsync(sourceId, targetChannelId, Config.ArchivalChannelsPath);
 
             // Convert the SocketChannel returned by GetChannel and convert it to a SocketTextChannel. If it isn't a guild text channel, return.
             if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel) return;
@@ -525,7 +526,7 @@ namespace Mafiabot
             if (sourceChannelId is not ulong sourceId) return;
 
             // Remove the channel from the JSON dictionary, so it is no longer archived
-            await RemoveUlongFromJSONDictionaryAsync(sourceId, "./archivalChannels.json");
+            await RemoveUlongFromJSONDictionaryAsync(sourceId, Config.ArchivalChannelsPath);
 
             // Convert the SocketChannel returned by GetChannel into a SocketTextChannel. If the channel is not a guild text channel, return.
             if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel) return;
