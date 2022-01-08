@@ -1,15 +1,9 @@
-﻿/**
- * 
- * ALL TEXT COMMANDS ARE DEPRECATED
- * 
- */
-using Discord;
-using Discord.Commands;
+﻿using Discord;
+using Discord.Interactions;
 using Discord.WebSocket;
 using Google.Cloud.Translation.V2;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using static Mafiabot.Functions;
@@ -17,31 +11,21 @@ using static Mafiabot.Program;
 
 namespace Mafiabot
 {
-    public class Commands : ModuleBase<SocketCommandContext>
+    public class Interactions : InteractionModuleBase<SocketInteractionContext>
     {
         /** 
          * The Ping command.
         */
-        [Command("ping")]
-        [Summary("Replies with 🏓.")]
-        public async Task PingAsync([Summary("Whether the bot should respond with the delay of the ping or not. If set to \"verbose\" or \"delay\", yes.")] string verbosity = "silent")
+        [SlashCommand("ping", "Replies with 🏓, and the delay")]
+        public async Task PingAsync()
         {
-            // If the specified verbosity is "verbose" or "delay"
-            if (verbosity.ToLower() == "verbose" || verbosity.ToLower() == "delay")
-            {
-                // Store when the command message was sent, in milliseconds
-                long commandSentMs = Context.Message.Timestamp.ToUnixTimeMilliseconds();
-                // Calculate the delay between when the command was sent and now
-                long delay = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - commandSentMs;
+            // Store when the command message was sent, in milliseconds
+            long commandSentMs = Context.Interaction.CreatedAt.ToUnixTimeMilliseconds();
+            // Calculate the delay between when the command was sent and now
+            long delay = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - commandSentMs;
 
-                // Reply to the message with the number of milliseconds of delay, and then a ping-pong paddle emoji
-                await ReplyAsync($"{delay} ms delay 🏓");
-            }
-            else
-            {
-                // Otherwise, just react with 🏓
-                await Context.Message.AddReactionAsync(new Emoji("🏓"));
-            }
+            // Respond to the message with the number of milliseconds of delay, and then a ping-pong paddle emoji
+            await RespondAsync($"{delay} ms delay 🏓", ephemeral: true);
         }
 
         /** 
@@ -49,104 +33,77 @@ namespace Mafiabot
          * To-do:
          * - Add a way to reset the bot's status
          */
-        [Command("changestatus")]
-        [Summary("Changes the bot's status.")]
-        [Alias("status", "statuschange", "activity", "changeactivity", "setactivity", "setstatus")]
-        [Priority(1)]
-        public async Task ChangeStatusAsync([Summary("The status type to set. One of the following: PLAYING, STREAMING, LISTENING, WATCHING")] string activityType, [Remainder][Summary("The status text to set.")] string newActivity)
-        {
-            // Create an array to store the emotes to react with
-            IEmote[] emotes = new IEmote[2];
-            emotes[0] = new Emoji("✅");
+        [MessageCommand("Change Status to Message")]
+        public async Task ChangeStatusAsync(SocketUserMessage message) => await ChangeStatusAsync(message.Content); // Execute ChangeStatusAsync() with the message's content
 
+        // Define an enum for all valid bot activity types
+        public enum BotActivityType
+        {
+            // Bots can have any activity type other than CustomStatus or Streaming
+            Playing = ActivityType.Playing, 
+            Listening = ActivityType.Listening,
+            Watching = ActivityType.Watching,
+            Competing = ActivityType.Competing
+        }
+
+        [SlashCommand("changestatus", "Changes the bot's status.")]
+        public async Task ChangeStatusAsync([Summary("status", "The status text to set.")] string newActivity, [Summary("type", "The status type to set.")] BotActivityType activityType = BotActivityType.Playing)
+        {
+            Console.WriteLine((ActivityType)activityType);
+            // Set the activity (of given type) to the supplied string
+            await Context.Client.SetActivityAsync(new Game(newActivity, (ActivityType)activityType));
+            // Create a string to store the response emote in (defaulting to 🎮, for Playing)
+            string responseEmote = "🎮";
             // Switch statement, holding each of the different activity types
-            switch (activityType.ToUpper())
+            switch (activityType)
             {
-                case "PLAYING": // ActivityType.Playing and 🎮
-                    // Set the activity (of type Playing) to the supplied string
-                    await Context.Client.SetActivityAsync(new Game(newActivity, ActivityType.Playing));
-                    // Set the second reaction emoji to be 🎮, indicating the activity type
-                    emotes[1] = new Emoji("🎮");
+                case BotActivityType.Playing: // ActivityType.Playing and 🎮
+                    // Set the emoji to be 🎮, indicating the activity type
+                    responseEmote = "🎮";
                     break;
-                case "STREAMING": // ActivityType.Streaming and 🎥
-                    // Set the activity (of type Streaming) to the supplied string
-                    await Context.Client.SetActivityAsync(new Game(newActivity, ActivityType.Streaming));
-                    // Set the second reaction emoji to be 🎥, indicating the activity type
-                    emotes[1] = new Emoji("🎥");
+                case BotActivityType.Listening: // ActivityType.Listening and 🎧
+                    // Set the emoji to be 🎧, indicating the activity type
+                    responseEmote = "🎧";
                     break;
-                case "LISTENING": // ActivityType.Listening and 🎧
-                    // Set the activity (of type Listening) to the supplied string
-                    await Context.Client.SetActivityAsync(new Game(newActivity, ActivityType.Listening));
-                    // Set the second reaction emoji to be 🎧, indicating the activity type
-                    emotes[1] = new Emoji("🎧");
+                case BotActivityType.Watching: // ActivityType.Watching and 📺
+                    // Set the emoji to be 📺, indicating the activity type
+                    responseEmote = "📺";
                     break;
-                case "WATCHING": // ActivityType.Watching and 📺
-                    // Set the activity (of type Watching) to the supplied string
-                    await Context.Client.SetActivityAsync(new Game(newActivity, ActivityType.Watching));
-                    // Set the second reaction emoji to be 📺, indicating the activity type
-                    emotes[1] = new Emoji("📺");
-                    break;
-                default:
-                    // If no status type is specified, include the full message as the activity (and let the ActivityType default to Playing)
-                    await Context.Client.SetActivityAsync(new Game(activityType + " " + newActivity));
-                    // Set the second reaction emoji to be 🎮, indicating the activity type
-                    emotes[1] = new Emoji("🎮");
+                case BotActivityType.Competing: // ActivityType.Competing and 🥊
+                    // Set the emoji to be 🥊, indicating the activity type
+                    responseEmote = "🥊";
                     break;
             }
 
-            // React with the emotes
-            await Context.Message.AddReactionsAsync(emotes);
-        }
-
-        // Overload for the ChangeStatus command, in case of a single-word status
-        [Command("changestatus")]
-        [Summary("Changes the bot's status, defaulting to type PLAYING")]
-        [Alias("status", "statuschange", "activity", "changeactivity", "setactivity")]
-        [Priority(0)]
-        public async Task ChangeStatusAsync([Remainder][Summary("The status text to set.")] string newStatus)
-        {
-            // Set the activity to the supplied string
-            await Context.Client.SetActivityAsync(new Game(newStatus));
-
-            // React with ✅🎮 (indicating both that it was successful and that the status type has been defaulted to Playing)
-            await Context.Message.AddReactionsAsync(new IEmote[]
-            {
-                new Emoji("✅"),
-                new Emoji("🎮")
-            });
+            // Respond with the emotes
+            await RespondAsync("✅" + responseEmote, ephemeral: true);
         }
 
         /** 
          * The ImagesOnly command.
          */
-        [Command("imagesonly")]
-        [Summary("Sets a channel to be images only.")]
-        [Alias("onlyimages")]
+        [SlashCommand("imagesonly", "Sets a channel to be images only.")]
         [RequireContext(ContextType.Guild)]
-        public async Task ImagesOnlyAsync()
+        public async Task ImagesOnlyAsync([Summary("channel", "The channel to set to be image-only; this channel, if not provided.")] ITextChannel channel = null)
         {
             // Execute asynchronously
             await Task.Run(async () =>
             {
+                // If a channel is not provided, default to the active channel
+                ulong imagesOnlyId = channel == null ? Context.Channel.Id : channel.Id;
                 // Toggle the channel the command was sent from in imagesOnly.json, and store whether it was added or removed
-                bool added = await ToggleUlongFromJSONAsync(Context.Channel.Id, Config.ImagesOnlyPath);
+                bool added = await ToggleUlongFromJSONAsync(imagesOnlyId, Config.ImagesOnlyPath);
 
-                // React with the emotes, ✅ if the channel is now images only, 🚫 if the channel is no longer images only, followed by 🖼
-                await Context.Message.AddReactionsAsync(new IEmote[]
-                {
-                    added ? new Emoji("✅") : new Emoji("🚫"), // Ternary, depending on the added bool
-                    new Emoji("🖼")
-                });
+                // Respond with the emotes, ✅ if the channel is now images only, 🚫 if the channel is no longer images only, followed by 🖼
+                await RespondAsync((added ? "✅" : "🚫") + "🖼", ephemeral: true);
             });
         }
 
         /** 
          * The ChangePfp command.
          */
-        [Command("changepfp")]
-        [Summary("Changes the bot's profile picture to an attached image.")]
-        [Alias("pfp", "changeavatar", "avatar", "pfpchange", "avatarchange")]
-        public async Task ChangePfpAsync()
+        [MessageCommand("Change PFP")]
+        public async Task ChangePfpAsync(SocketUserMessage message)
         {
             // Execute asynchronously
             await Task.Run(async () =>
@@ -156,16 +113,12 @@ namespace Mafiabot
                 try
                 {
                     // Set the URL to be the URL of the first attachment that has a designated width (which only images have)
-                    url = Context.Message.Attachments.First((Attachment attached) => attached.Width != null).Url;
+                    url = message.Attachments.First((Attachment attached) => attached.Width != null).Url;
                 }
                 catch
                 {
-                    // If that fails (due to not finding a valid attachment), react with 🚫📸 to indicate that it did not find an image
-                    await Context.Message.AddReactionsAsync(new IEmote[]
-                    {
-                        new Emoji("❓"),
-                        new Emoji("📸")
-                    });
+                    // If that fails (due to not finding a valid attachment), respond with 🚫📸 to indicate that it did not find an image
+                    await RespondAsync("🚫📸", ephemeral: true);
                     // Then return
                     return;
                 }
@@ -173,87 +126,32 @@ namespace Mafiabot
                 // Attempt to change the bot's avatar, and store whether it was successful
                 bool successful = await ChangeAvatarAsync(url, Context.Client.CurrentUser);
 
-                if (successful) await Context.Message.AddReactionAsync(new Emoji("✅")); // If successful, react with ✅ (indicating as such)
-                else await Context.Message.AddReactionsAsync(new IEmote[] // If unsuccessful, react with 🚫⏲️ (indicating that avatar changes are currently on cooldown)
-                {
-                    new Emoji("🚫"),
-                    new Emoji("⏲️")
-                });
+                if (successful) await RespondAsync("✅", ephemeral: true); // If successful, respond with ✅ (indicating as such)
+                else await RespondAsync("🚫⏲️", ephemeral: true); // If unsuccessful, respond with 🚫⏲️ (indicating that avatar changes are currently on cooldown)
             });
         }
 
         /** 
          * The ResetPfp command.
          */
-        [Command("resetpfp")]
-        [Summary("Resets the bot's profile picture to the default.")]
-        [Alias("pfpreset", "resetavatar", "avatarreset", "avatareset")]
+        [SlashCommand("resetpfp", "Resets the bot's profile picture to the default.")]
         public async Task ResetPfpAsync()
         {
             // Reset the avatar, and store whether it was successful
             bool successful = await ResetAvatarAsync(Context.Client.CurrentUser);
 
-            if (successful) await Context.Message.AddReactionAsync(new Emoji("✅")); // If successful, react with ✅ (indicating as such)
-            else await Context.Message.AddReactionsAsync(new IEmote[] // If unsuccessful, react with 🚫⏲️ (indicating that avatar changes are currently on cooldown)
-            {
-                    new Emoji("🚫"),
-                    new Emoji("⏲️")
-            });
-        }
-
-        /** 
-         * The Reply command.
-         */
-        [Command("reply")]
-        [Summary("Executes a provided command on the message this message is replying to.")]
-        public async Task ExecuteReplyAsync([Summary("The command to execute on the reply, optionally alongside a prefix")][Remainder] string command)
-        {
-            if (Context.Message.ReferencedMessage is not SocketUserMessage reply) return; // If the referenced message isn't a user message, return
-
-            // Check if the referenced message has an attached embed or file
-            bool hasEmbed = reply.Embeds.FirstOrDefault() != default(Embed);
-            bool hasFile = reply.Attachments.FirstOrDefault() != default(Attachment);
-
-            // Declare two empty variables for use in the switch statement
-            IUserMessage copy = null; // The variable to store the sent message in
-            Stream data; // The variable to store a potential attachment's data in
-            // Assemble the command message, with the override prefix and the provided command
-            string builtCommand = $"[NO_BOT_OVERRIDE]{command} {reply.Content}";
-            // Switch statement based on whether the message has an embed and whether it has a file
-            switch (hasEmbed)
-            {
-                case true when hasFile: // Has an embed, and has a file
-                    // Get the file's data
-                    data = GetStreamFromImageUrl(reply.Attachments.First().Url);
-                    // Send a (temporary) message mimicking as much of the referenced message as possible, including one of its embeds and one of its attachments, with the content being the built command
-                    copy = await Context.Channel.SendFileAsync(data, reply.Attachments.First().Filename, builtCommand, false, reply.Embeds.First(), null, false, AllowedMentions.None, reply.Reference);
-                    break;
-                case true when !hasFile: // Has an embed, and has no file
-                    // Send a (temporary) message mimicking as much of the referenced message as possible, including one of its embeds, with the content being the built command
-                    copy = await Context.Channel.SendMessageAsync(builtCommand, false, reply.Embeds.First(), null, AllowedMentions.None, reply.Reference);
-                    break;
-                case false when hasFile: // Has no embed, and has a file
-                    // Get the file's data
-                    data = GetStreamFromImageUrl(reply.Attachments.First().Url);
-                    // Send a (temporary) message mimicking as much of the referenced message as possible, including one of its attachments, with the content being the built command
-                    copy = await Context.Channel.SendFileAsync(data, reply.Attachments.First().Filename, builtCommand, false, null, null, false, AllowedMentions.None, reply.Reference);
-                    break;
-                case false when !hasFile: // Has no embed, and has no file
-                    // Send a (temporary) message mimicking as much of the referenced message as possible, with the content being the built command
-                    copy = await Context.Channel.SendMessageAsync(builtCommand, false, null, null, AllowedMentions.None, reply.Reference);
-                    break;
-            }
-            // Delete the temporary message
-            await copy.DeleteAsync();
+            if (successful) await RespondAsync("✅", ephemeral: true); // If successful, respond with ✅ (indicating as such)
+            else await RespondAsync("🚫⏲️", ephemeral: true); // If unsuccessful, respond with 🚫⏲️ (indicating that avatar changes are currently on cooldown)
         }
 
         /**
          * The TimeDisplay command.
          */
-        [Command("timedisplay")]
-        [Summary("Displays the given time with Discord's timestamp formatting")]
-        [Alias("displaytime", "time", "display", "timeconvert", "converttime", "convert")]
-        public async Task TimeConvertAsync([Summary("The time to display, such as\"8:00 AM\" or \"May 8, 1988 5:49 PM\"")][Remainder] string time)
+        [MessageCommand("Time Display")]
+        public async Task TimeConvertAsync(SocketUserMessage message) => await TimeConvertAsync(message.Content); // Run TimeConvertAsync with the message's content
+
+        [SlashCommand("timedisplay", "Displays the given time with Discord's timestamp formatting")]
+        public async Task TimeConvertAsync([Summary("time", "The time to display, such as\"8:00 AM\" or \"May 8, 1988 5:49 PM\", in UTC")] string time)
         {
             // Parse the provided time into a DateTime object
             DateTimeOffset parsed;
@@ -264,36 +162,54 @@ namespace Mafiabot
             }
             catch (Exception)
             {
-                // If the parse fails
-                await Context.Message.AddReactionsAsync(new IEmote[]
-                {
-                    new Emoji("❓"),
-                    new Emoji("📆")
-                });
+                // If the parse fails, respond
+                await RespondAsync("📆❓", ephemeral: true);
                 // Return
                 return;
             }
 
-            // Reply with both conversions
-            EmbedBuilder embed = new EmbedBuilder()
+            // Respond with both timestamps
+            await RespondAsync(embed: new EmbedBuilder()
                 .WithColor(GetRainbowColor()) // Set the color
                 .AddField("Exact Time", $"<t:{parsed.ToUnixTimeSeconds()}:f>") // Add a field with the exact timestamp
                 .AddField("Relative Time", $"<t:{parsed.ToUnixTimeSeconds()}:R>") // Add a field with the relative timestamp
-                .WithTimestamp(parsed); // Set the timestamp
-            await ReplyAsync(embed: embed.Build());
+                .WithTimestamp(parsed) // Set the timestamp
+                .Build());
         }
 
         /**
          * The Pride command.
          */
-        [Command("pride")]
-        [Summary("Sends a specified pride flag")]
-        [Alias("prideflag", "flag")]
-        [Priority(1)]
-        public async Task PrideFlagAsync([Summary("The flag to display")][Remainder] string flagName)
+
+        // Define an enum containing every pride flag, for autocompletion
+        public enum PrideFlags
+        {
+            Lesbian = 0,
+            Gay = 1,
+            Bisexual = 2,
+            Pansexual = 3,
+            Asexual = 4,
+            Demisexual = 5,
+            Demilesbian = 6,
+            Omnisexual = 7,
+            Abrosexual = 8,
+            Gay_Biromantic = 9,
+            Aromantic = 10,
+            AroAce = 11,
+            Transgender = 12,
+            Nonbinary = 13,
+            Genderqueer = 14,
+            Genderfluid = 15,
+            Agender = 16,
+            Aspergers = 17,
+            Therian = 18
+        }
+
+        [SlashCommand("pride", "Sends a specified pride flag")]
+        public async Task PrideFlagAsync([Summary("flag", "The flag to display")] PrideFlags flagName)
         {
             // Get the pride flag
-            PrideFlag flag = await GetPrideFlagAsync(flagName);
+            PrideFlag flag = await GetPrideFlagAsync(flagName.ToString().Replace('_', '-'));
 
             // Construct a reply embed
             EmbedBuilder embed = new EmbedBuilder()
@@ -302,29 +218,24 @@ namespace Mafiabot
                 .WithAuthor("Pride", "https://media.discordapp.net/attachments/716108846816297040/823648970215522304/image.png"); // Set the author
 
             // Reply with the embed
-            await ReplyAsync(embed: embed.Build());
+            await RespondAsync(embed: embed.Build());
         }
 
-        [Command("pride")]
-        [Summary("Lists all supported pride flags and their aliases")]
-        [Alias("prideflag", "flag")]
-        [Priority(0)]
+        [SlashCommand("pride-list", "Lists all supported pride flags and their aliases")]
         public async Task PrideFlagAsync()
         {
             // Get the pride flag names
             string names = await GetPrideFlagNamesAsync();
 
-            // Construct a reply embed
-            EmbedBuilder embed = new EmbedBuilder()
+            // Respond with a reply embed
+            await RespondAsync(embed: new EmbedBuilder()
                 .WithColor(GetRainbowColor()) // Random rainbow color
                 .WithAuthor("Pride", "https://media.discordapp.net/attachments/716108846816297040/823648970215522304/image.png") // Set the author
                 .AddField("!pride <Flag>", "\u200b") // First field, with the command syntax
                 .AddField("Flag", "One of the supported pride flags, as listed below. If you request a flag that isn't supported, you'll just get the progressive flag. If you want a flag added to this, lemme know!") // Second field, describing the Flag argument
                 .AddField("SupportedFlags", names) // Third field, with the pride flag names
-                .WithImageUrl("https://cdn.discordapp.com/attachments/716108846816297040/823668797248372766/Z.png"); // Send the progressive flag
-
-            // Reply with the embed
-            await ReplyAsync(embed: embed.Build());
+                .WithImageUrl("https://cdn.discordapp.com/attachments/716108846816297040/823668797248372766/Z.png") // Send the progressive flag
+                .Build(), ephemeral: true);
         }
 
         /**
@@ -333,19 +244,11 @@ namespace Mafiabot
         // Create the translation client with default credentials
         private static readonly TranslationClient translate = TranslationClient.Create();
 
-        [Command("translate")]
-        [Summary("Repeatedly translates a given string, defaulting to 5 cycles")]
-        [Priority(0)]
-        public async Task TranslateAsync([Summary("The text to translate")][Remainder] string text)
-        {
-            // If cycles is not provided, default to 5
-            await TranslateAsync(5, text);
-        }
+        [MessageCommand("Translate")]
+        public async Task TranslateAsync(SocketUserMessage message) => await TranslateAsync(message.Content);
 
-        [Command("translate")]
-        [Summary("Repeatedly translates a given string")]
-        [Priority(1)]
-        public async Task TranslateAsync([Summary("The number of cycles to translate for, maximum of 50")] int cycles, [Summary("The text to translate")][Remainder] string text)
+        [SlashCommand("translate", "Repeatedly translates a given string")]
+        public async Task TranslateAsync([Summary("text", "The text to translate")] string text, [Summary("cycles", "The number of cycles to translate for, maximum of 50")][MinValue(1)][MaxValue(50)] int cycles = 5)
         {
             // Execute asynchronously
             await Task.Run(async () =>
@@ -353,12 +256,12 @@ namespace Mafiabot
                 // Sanity check for number of cycles
                 if (cycles > 50)
                 {
-                    // Reply
-                    await ReplyAsync(embed: new EmbedBuilder()
+                    // Respond
+                    await RespondAsync(embed: new EmbedBuilder()
                         .WithAuthor("Translate", "https://cdn.discordapp.com/attachments/716108846816297040/823295348474642492/1024px-Google_Translate_logo.png")
                         .WithColor(GetRainbowColor())
                         .WithDescription("Cycles are limited at a maximum of 50\nNote that increased cycles have diminishing returns")
-                        .Build());
+                        .Build(), ephemeral: true);
                     // Don't execute the rest of the command
                     return;
                 }
@@ -396,8 +299,8 @@ namespace Mafiabot
                     .AddField("Translating from:", firstLanguage.Name, true) // Add an inline field to show the language currently being translated from
                     .AddField("Translating sequence", firstLanguage.Name); // Add a field to show the sequence of translations
 
-                // Send the embed, and store the reply message
-                Discord.Rest.RestUserMessage replyMessage = await Context.Message.Channel.SendMessageAsync(embed: embed.Build());
+                // Send the embed
+                await RespondAsync(embed: embed.Build());
 
                 // Create a variable to store the language the text is currently in
                 Language previousLanguage = firstLanguage;
@@ -426,9 +329,9 @@ namespace Mafiabot
                         .AddField("Translating from:", firstLanguage.Name, true) // Show the language that was translated from
                         .AddField("Translating sequence", $"{embed.Fields[4].Value} -> {target.Name}"); // Update the translate sequence, appending the most recent language to the previous value
 
-                    // Edit the reply message to show the new embed
+                    // Edit the reply message to show the new embed, without waiting for it to finish editing (for performance)
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                    replyMessage.ModifyAsync((properties) =>
+                    Context.Interaction.ModifyOriginalResponseAsync((properties) =>
                     {
                         properties.Embed = embed.Build();
                     });
@@ -450,7 +353,7 @@ namespace Mafiabot
                 }
 
                 // Reply with a second embed
-                await ReplyAsync(embed: new EmbedBuilder()
+                await FollowupAsync(embed: new EmbedBuilder()
                     .WithAuthor("Translate", "https://cdn.discordapp.com/attachments/716108846816297040/823295348474642492/1024px-Google_Translate_logo.png") // Set the author
                     .WithColor(GetRainbowColor()) // Set the color
                     .AddField("Output", translateText) // Add a field with the final text
@@ -461,20 +364,18 @@ namespace Mafiabot
         /**
          * The Archive command.
          */
-        [Command("archive")]
-        [Summary("Sets the given channel to be archived in the given channel")]
-        public async Task MarkArchiveAsync([Summary("The channel to archive to")] IChannel targetChannel, [Summary("The channel to archive from, defaulting to the channel the command is being executed in")] IChannel sourceChannel = null)
+        [SlashCommand("archive", "Sets one given channel to be archived in another given channel")]
+        public async Task MarkArchiveAsync([Summary("target-channel", "The channel to archive to")] SocketTextChannel targetChannel, [Summary("source-channel", "The channel to archive from, defaulting to this channel")] SocketTextChannel sourceChannel = null)
         {
             // If there is no provided source channel, default to the contextual channel
-            if (sourceChannel == null) sourceChannel = Context.Channel;
+            if (sourceChannel == null) sourceChannel = (SocketTextChannel)Context.Channel;
 
             // If both channels are referenced via a channel link, extract the id from it and execute as normal
             await MarkArchiveAsync(targetChannel.Id, sourceChannel.Id);
-        }   
+        }
 
-        [Command("archive")]
-        [Summary("Sets the given channel to be archived in the given channel")]
-        public async Task MarkArchiveAsync([Summary("The ID of the channel to archive to")] ulong targetChannelId, [Summary("The ID of the channel to archive from, defaulting to the channel the command is being executed in")] ulong? sourceChannelId = null)
+        [SlashCommand("archive-id", "Sets one given channel to be archived in another given channel")]
+        public async Task MarkArchiveAsync([Summary("target-channel-id", "The ID of the channel to archive to")] ulong targetChannelId, [Summary("source-channel-id", "The ID of the channel to archive from, defaulting to this channel")] ulong? sourceChannelId = null)
         {
             // If there is no provided source channel id, default to the contextual channel id
             if (sourceChannelId == null) sourceChannelId = Context.Channel.Id;
@@ -485,7 +386,15 @@ namespace Mafiabot
             await AssignUlongToJSONDictionaryAsync(sourceId, targetChannelId, Config.ArchivalChannelsPath);
 
             // Convert the SocketChannel returned by GetChannel and convert it to a SocketTextChannel. If it isn't a guild text channel, return.
-            if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel) return;
+            if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel)
+            {
+                // Respond with an error message
+                await RespondAsync("❌ Source channel must be a text channel.", ephemeral: true);
+                return;
+            }
+
+            // Respond  
+            await RespondAsync("✅", ephemeral: true);
 
             // Reply
             IUserMessage reply = await sourceChannel.SendMessageAsync(embed: new EmbedBuilder()
@@ -517,13 +426,11 @@ namespace Mafiabot
         /**
          * The StopArchive command.
          */
-        [Command("stoparchive")]
-        [Summary("Sets the given channel to no longer be archived.")]
-        public async Task StopArchiveAsync([Summary("The source channel to stop archiving")] IChannel sourceChannel) => await StopArchiveAsync(sourceChannel.Id); // If referred to by channel, extract the ID and continue as usual
+        [SlashCommand("stoparchive", "Sets the given channel to no longer be archived.")]
+        public async Task StopArchiveAsync([Summary("source-channel", "The source channel to stop archiving, defaulting to this channel")] SocketTextChannel sourceChannel = default) => await StopArchiveAsync(sourceChannel == default ? null : sourceChannel.Id); // If referred to by channel, extract the ID and continue as usual
 
-        [Command("stoparchive")]
-        [Summary("Sets the given channel to no longer be archived.")]
-        public async Task StopArchiveAsync([Summary("The ID of the source channel to stop archiving, defaulting to the channel the command is executed in")] ulong? sourceChannelId = null)
+        [SlashCommand("stoparchive-id", "Sets the given channel to no longer be archived.")]
+        public async Task StopArchiveAsync([Summary("source-channel-id", "The ID of the source channel to stop archiving, defaulting to this channel")] ulong? sourceChannelId = null)
         {
             // If sourceChannelId is not provided, default to the channel id of the contextual channel
             if (sourceChannelId == null) sourceChannelId = Context.Channel.Id;
@@ -534,9 +441,16 @@ namespace Mafiabot
             await RemoveUlongFromJSONDictionaryAsync(sourceId, Config.ArchivalChannelsPath);
 
             // Convert the SocketChannel returned by GetChannel into a SocketTextChannel. If the channel is not a guild text channel, return.
-            if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel) return;
+            if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel)
+            {
+                await RespondAsync("Source channel must be a text channel.", ephemeral: true);
+                return;
+            }
 
-            // Reply with an embed
+            // Respond
+            await RespondAsync("✅", ephemeral: true);
+            
+            // Send an embed in the source channel
             IUserMessage reply = await sourceChannel.SendMessageAsync(embed: new EmbedBuilder()
                 .WithAuthor("Archival", "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwww.emoji.co.uk%2Ffiles%2Ftwitter-emojis%2Fobjects-twitter%2F11033-scroll.png&f=1&nofb=1") // Set the author
                 .WithColor(GetRainbowColor()) // Set the color
@@ -565,54 +479,73 @@ namespace Mafiabot
         /**
          * The Purge command.
          */
-        [Command("purge")]
-        [Summary("Instantly triggers channel purging. Can only be used by the bot's owner, and is only to be used to make up for times that the bot failed to purge overnight.")]
+        [SlashCommand("purge", "Instantly triggers channel purging. Can only be used by the bot's owner.")]
         [RequireOwner]
         public async Task TriggerPurgeAsync()
         {
             // Owner-only debug command that immediately triggers channel purging
             await PurgeChannelsAsync();
-            // React with ✅
-            await Context.Message.AddReactionAsync(new Emoji("✅"));
+            // Respond with ✅
+            await RespondAsync("✅", ephemeral: true);
         }
 
         /**
          * The Help command.
          */
-        [Command("help")]
-        [Summary("Lists the bots different commands.")]
-        public async Task ListCommandsAsync([Summary("A command to get more detail on")] string command = default)
+
+        // Define an enum containing every slash command, for autocomplete
+        public enum SlashCommands
+        {
+            all = -1,
+            ping = 0,
+            changestatus = 1,
+            imagesonly = 2,
+            resetpfp = 3,
+            timedisplay = 4,
+            pride = 5,
+            pride_list = 6,
+            translate = 7,
+            archive = 8,
+            archive_id = 9,
+            stoparchive = 10,
+            stoparchive_id = 11,
+            purge = 12,
+            help = 13
+        }
+
+        [SlashCommand("help", "Lists the bots different commands.")]
+        public async Task ListCommandsAsync([Summary("command", "A command to get more detail on")] SlashCommands command = SlashCommands.all)
         {
             // Get the commands that can be executed in the current context
-            IReadOnlyCollection<CommandInfo> commands = await Program._commands.GetExecutableCommandsAsync(Context, null);
+            ICollection<SlashCommandInfo> commands = (ICollection<SlashCommandInfo>)_interactions.SlashCommands;
 
             // If a specific command has not been provided, provide a brief description of every command the bot has
-            if (command == default)
+            if (command == SlashCommands.all)
             {
                 // Create an empty string to hold all of the commands and their syntaxes and summaries
                 string helpMessage = "";
                 // For each command the bot has
-                foreach (CommandInfo testCommand in commands)
+                foreach (SlashCommandInfo testCommand in commands)
                 {
                     // Add two newlines, then add the command's name (alongside some bold formatting and the command prefix)
-                    helpMessage += $"\n\n**!{testCommand.Name}**";
+                    helpMessage += $"\n\n**/{testCommand.Name}**";
                     // For each of the command's parameters
-                    foreach (ParameterInfo parameter in testCommand.Parameters)
+                    foreach (SlashCommandParameterInfo parameter in testCommand.Parameters)
                     {
                         // If the parameter is optional
-                        helpMessage += parameter.IsOptional
+                        helpMessage += !parameter.IsRequired
                             ? $" **[{parameter.Name}]**"  // Add the parameter's name surrounded by square brackets (alongside some bold formatting)
                             : $" **<{parameter.Name}>**"; // Add the parameter's name surrounded by arrow brackets (alongside some bold formatting)
                     }
                     // Add a newline, and then the command's summary 
-                    helpMessage += $"\n{testCommand.Summary}";
+                    helpMessage += $"\n{testCommand.Description}";
                 }
 
-                // Reply with the embed
-                await ReplyAsync(embed: new EmbedBuilder()
+                // Respond with the embed
+                await RespondAsync(embed: new EmbedBuilder()
                     .WithColor(GetRainbowColor())
                     .WithDescription(helpMessage)
-                    .Build());
+                    .Build(), ephemeral: true);
             }
             else
             {
@@ -621,45 +554,37 @@ namespace Mafiabot
                     .WithColor(GetRainbowColor()); // Set the color
 
                 // For each command 
-                foreach (CommandInfo testCommand in commands)
+                foreach (SlashCommandInfo testCommand in commands)
                 {
                     // If none of the command's names match the provided command's name, skip this command
-                    if (!testCommand.Aliases.Any(alias => alias.ToLower() == command.ToLower())) continue;
+                    if (testCommand.Name != command.ToString().Replace('_', '-')) continue;
                     // Create a string to hold the command's syntax
                     string syntax = "";
 
-                    // Add the command's first alias
-                    syntax += $"!{testCommand.Aliases[0]}";
-                    // For each of the command's aliases
-                    foreach (string alias in testCommand.Aliases)
-                    {
-                        // If the current alias is the first alias, that alias has already been added and thus it should be skipped now
-                        if (alias == testCommand.Aliases[0]) continue;
-                        // Otherwise, add the alias to the syntax string
-                        syntax += $" | {alias}";
-                    }
+                    // Add the command's name
+                    syntax += $"/{testCommand.Name}";
 
                     // For each of the command's parameters
-                    foreach (ParameterInfo parameter in testCommand.Parameters)
+                    foreach (SlashCommandParameterInfo parameter in testCommand.Parameters)
                     {
                         // If the parameter is optional
-                        syntax += parameter.IsOptional 
+                        syntax += !parameter.IsRequired 
                             ? $" [{parameter.Name}]"  // Add the parameter's name surrounded by square brackets
                             : $" <{parameter.Name}>"; // Add the parameter's name surrounded by arrow brackets
                     }
                     // Add a field to the embed, with the command syntax as the name of the field and the command's summary as the value
-                    embed.AddField(syntax, testCommand.Summary);
+                    embed.AddField(syntax, testCommand.Description);
 
                     // For each of the command's parameters (again)
-                    foreach (ParameterInfo parameter in testCommand.Parameters)
+                    foreach (SlashCommandParameterInfo parameter in testCommand.Parameters)
                     {
                         // Add an inline field with the parameter's name and summary
-                        embed.AddField(parameter.Name, parameter.Summary, true);
+                        embed.AddField(parameter.Name, parameter.Description, true);
                     }
                 }
 
-                // Reply with the embed
-                await ReplyAsync(embed: embed.Build());
+                // Respond with the embed
+                await RespondAsync(embed: embed.Build(), ephemeral: true);
             }
         }
     }
