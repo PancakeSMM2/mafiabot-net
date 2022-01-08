@@ -1,5 +1,6 @@
 ﻿using Discord;
 using Discord.Commands;
+using Discord.Interactions;
 using Discord.WebSocket;
 using Discord.Rest;
 using Mafiabot.Jobs;
@@ -25,6 +26,7 @@ namespace Mafiabot
 
         public static DiscordSocketClient _client; // The client
         public static CommandService _commands; // The command service
+        public static InteractionService _interactions; // The interaction service
 
         public static async Task MainAsync()
         {
@@ -90,25 +92,29 @@ namespace Mafiabot
                 File.WriteAllText(Config.PurgeChannelsPath, JsonConvert.SerializeObject(Array.Empty<ulong>()));
             }
 
-            _client = new DiscordSocketClient(new DiscordSocketConfig()
-            {
-                ExclusiveBulkDelete = false // Determines whether bulk deletes will be excluded from the MessageDeleted event
-            }); // Create the client
+            _client = new DiscordSocketClient(); // Create the client
             _commands = new CommandService(new CommandServiceConfig()
             {
                 IgnoreExtraArgs = true, // Whether to ignore extra provided parameters for commands
                 CaseSensitiveCommands = false // Whether commands should be case-sensitive
             }); // Create the command service
+            _interactions = new InteractionService(_client.Rest, new InteractionServiceConfig()
+            {
+                LogLevel = LogSeverity.Verbose,
+                ThrowOnError = true
+            }); // Create the interaction service
 
             CommandHandler handler = new(_client, _commands); // Create the command handler
+            InteractionHandler interactionHandler = new(_client, _interactions); // Create the interaction handler
             Bouncer bouncer = new(_client); // Create the bouncer
             Archiver archiver = new(_client); // Create the archiver
 
             Environment.SetEnvironmentVariable("GOOGLE_CLOUD_PROJECT", Config.GoogleProjectId); // Set the "GOOGLE_CLOUD_PROJECT" environment variable
             Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", Config.GoogleKey); // Set the "GOOGLE_APPLICATION_CREDENTIALS" environment variable
 
-            // Install the handler, bouncer, and archiver
+            // Install the handler, interaction handler, bouncer, and archiver
             await handler.InstallCommandsAsync();
+            await interactionHandler.InstallInteractionsAsync();
             bouncer.InstallBouncer();
             archiver.InstallArchiver();
 
@@ -369,6 +375,78 @@ namespace Mafiabot
                 context: context,
                 argPos: argPos,
                 services: null);
+        }
+    }
+
+    // The Interaction Handler
+    public class InteractionHandler
+    {
+        // Variables to store the client and the InteractionService
+        private readonly DiscordSocketClient _client;
+        private readonly InteractionService _interactions;
+
+        // Retrieve client and InteractionService via constructor
+        public InteractionHandler(DiscordSocketClient client, InteractionService interactions)
+        {
+            _interactions = interactions;
+            _client = client;
+        }
+
+        public async Task InstallInteractionsAsync()
+        {
+            _client.Ready += OnClientReady;
+            _client.SlashCommandExecuted += HandleSlashAsync;
+            _client.MessageCommandExecuted += HandleMessageAsync;
+            _client.UserCommandExecuted += HandleUserAsync;
+            _client.AutocompleteExecuted += HandleAutocompleteAsync;
+            _client.ButtonExecuted += HandleButtonAsync;
+            _client.SelectMenuExecuted += HandleMenuAsync;
+
+            await _interactions.AddModulesAsync(
+                assembly: Assembly.GetEntryAssembly(),
+                services: null);
+        }
+
+        public async Task OnClientReady()
+        {
+            // On ready, register commands globally
+            await _interactions.RegisterCommandsGloballyAsync(true);
+        }
+
+        public async Task HandleSlashAsync(SocketSlashCommand slash)
+        {
+            SocketInteractionContext context = new(_client, slash);
+            await _interactions.ExecuteCommandAsync(context, services: null);
+        }
+
+        public async Task HandleMessageAsync(SocketMessageCommand message)
+        {
+            SocketInteractionContext context = new(_client, message);
+            await _interactions.ExecuteCommandAsync(context, services: null);
+        }
+
+        public async Task HandleUserAsync(SocketUserCommand user)
+        {
+            SocketInteractionContext context = new(_client, user);
+            await _interactions.ExecuteCommandAsync(context, services: null);
+        }
+
+        public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction autocomplete)
+        {
+            SocketInteractionContext context = new(_client, autocomplete);
+            await _interactions.ExecuteCommandAsync(context, services: null);
+        }
+
+        public async Task HandleButtonAsync(SocketMessageComponent component)
+        {
+            SocketInteractionContext context = new(_client, component);
+            await _interactions.ExecuteCommandAsync(context, services: null);
+        }
+
+        public async Task HandleMenuAsync(SocketMessageComponent component)
+        {
+            SocketInteractionContext context = new(_client, component);
+            await _interactions.ExecuteCommandAsync(context, services: null);
         }
     }
 
