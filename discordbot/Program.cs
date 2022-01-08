@@ -409,7 +409,8 @@ namespace Mafiabot
 
         public async Task OnClientReady()
         {
-            await _interactions.RegisterCommandsToGuildAsync(614681596376907786, true);
+            // On ready, register commands globally
+            await _interactions.RegisterCommandsGloballyAsync(true);
         }
 
         public async Task HandleSlashAsync(SocketSlashCommand slash)
