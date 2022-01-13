@@ -92,16 +92,22 @@ namespace Mafiabot
                 File.WriteAllText(Config.PurgeChannelsPath, JsonConvert.SerializeObject(Array.Empty<ulong>()));
             }
 
-            _client = new DiscordSocketClient(); // Create the client
+            _client = new DiscordSocketClient(new DiscordSocketConfig()
+            {
+                GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildPresences,
+                LogLevel = Config.Development ? LogSeverity.Debug : LogSeverity.Info
+            }); // Create the client
             _commands = new CommandService(new CommandServiceConfig()
             {
+                LogLevel = Config.Development ? LogSeverity.Debug : LogSeverity.Info, // If in a development environment, send Debug severity messages, otherwise, send Warning severity messages
                 IgnoreExtraArgs = true, // Whether to ignore extra provided parameters for commands
-                CaseSensitiveCommands = false // Whether commands should be case-sensitive
+                CaseSensitiveCommands = false, // Whether commands should be case-sensitive
+                DefaultRunMode = Discord.Commands.RunMode.Async // Set the RunMode to execute asynchronously
             }); // Create the command service
             _interactions = new InteractionService(_client.Rest, new InteractionServiceConfig()
             {
-                LogLevel = LogSeverity.Verbose,
-                ThrowOnError = true
+                LogLevel = Config.Development ? LogSeverity.Debug : LogSeverity.Info, // If in a development environment, send Debug severity messages, otherwise, send Warning severity messages
+                DefaultRunMode = Discord.Interactions.RunMode.Async // Set the RunMode to execute asynchronously
             }); // Create the interaction service
 
             CommandHandler handler = new(_client, _commands); // Create the command handler
@@ -303,18 +309,24 @@ namespace Mafiabot
                 // Read the config as a string key dynamic value Dictionary
                 Dictionary<string, dynamic> loaded = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(File.ReadAllText(configPath));
 
-                // Set all properties to the loaded config's properties
-                DefaultAvatarPath = loaded["DefaultAvatarPath"];
-                ArchivalChannelsPath = loaded["ArchivalChannelsPath"];
-                ImagesOnlyPath = loaded["ImagesOnlyPath"];
-                LogChannelsPath = loaded["LogChannelsPath"];
-                PrideFlagsPath = loaded["PrideFlagsPath"];
-                PurgeChannelsPath = loaded["PurgeChannelsPath"];
+                // Set all properties to the loaded config's properties (casting to the correct types, just in case)
+                Development = (bool)loaded["Development"];
+                DevelopmentServerId = (ulong)loaded["DevelopmentServerId"];
 
-                Token = loaded["Token"];
-                GoogleProjectId = loaded["GoogleProjectId"];
-                GoogleKey = loaded["GoogleKey"];
+                DefaultAvatarPath = (string)loaded["DefaultAvatarPath"];
+                ArchivalChannelsPath = (string)loaded["ArchivalChannelsPath"];
+                ImagesOnlyPath = (string)loaded["ImagesOnlyPath"];
+                LogChannelsPath = (string)loaded["LogChannelsPath"];
+                PrideFlagsPath = (string)loaded["PrideFlagsPath"];
+                PurgeChannelsPath = (string)loaded["PurgeChannelsPath"];
+
+                Token = (string)loaded["Token"];
+                GoogleProjectId = (string)loaded["GoogleProjectId"];
+                GoogleKey = (string)loaded["GoogleKey"];
             }
+
+            public static bool Development; // Whether the bot should operate in development mode
+            public static ulong DevelopmentServerId; // The ID of the development server
 
             public static string DefaultAvatarPath; // The file path to the default avatar
             public static string ArchivalChannelsPath; // The file path to the archival channels
@@ -329,6 +341,9 @@ namespace Mafiabot
         }
     }
 
+    /**
+     * CommandHandler is DEPRECATED
+     */
     public class CommandHandler
     {
         // Variables to store the client and the CommandService
@@ -409,8 +424,12 @@ namespace Mafiabot
 
         public async Task OnClientReady()
         {
-            // On ready, register commands globally
-            await _interactions.RegisterCommandsGloballyAsync(true);
+            if (!Config.Development) // If not in a development environment
+            {
+                // On ready, register commands globally
+                await _interactions.RegisterCommandsGloballyAsync(true);
+            }
+            else await _interactions.RegisterCommandsToGuildAsync(Config.DevelopmentServerId, true); // If in a development environment, register commands to the development guild
         }
 
         public async Task HandleSlashAsync(SocketSlashCommand slash)
