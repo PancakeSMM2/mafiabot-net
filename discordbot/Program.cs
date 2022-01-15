@@ -36,6 +36,9 @@ namespace Mafiabot
             {
                 // Create a default config
                 Dictionary<string, dynamic> defaultConfig = new();
+                defaultConfig.Add("Development", false);
+                defaultConfig.Add("DevelopmentServerId", 0);
+
                 defaultConfig.Add("DefaultAvatarPath", "Avatar.png"); // Default file path
                 defaultConfig.Add("ArchivalChannelsPath", "archivalChannels.json"); // Default file path
                 defaultConfig.Add("ImagesOnlyPath", "imagesOnly.json"); // Default file path
