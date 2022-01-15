@@ -510,7 +510,8 @@ namespace Mafiabot
             stoparchive = 10,
             stoparchive_id = 11,
             purge = 12,
-            help = 13
+            help = 13,
+            status = 14
         }
 
         [SlashCommand("help", "Lists the bots different commands.")]
@@ -586,6 +587,36 @@ namespace Mafiabot
                 // Respond with the embed
                 await RespondAsync(embed: embed.Build(), ephemeral: true);
             }
+        }
+
+        /**
+         * The Status command
+         */
+        [UserCommand("Display Status")]
+        [SlashCommand("status", "Displays another user's current custom status")]
+        public async Task DisplayStatusAsync([Summary("user", "The user whose status to display")] IUser user)
+        {
+            // Execute asynchronously
+            await Task.Run(async () =>
+            {
+                // Get the user's custom status
+                CustomStatusGame activity = await GetCustomStatusAsync(user);
+
+                if (activity == default) // If the user has no custom status
+                {
+                    // Respond with a couple emojis to indicate that the bot couldn't find that user's custom status
+                    await RespondAsync("❓🗒");
+                    return; // Return
+                }
+
+                // Respond with an embed
+                await RespondAsync(embed: new EmbedBuilder()
+                    .WithColor(GetRainbowColor()) // Set the color
+                    .WithAuthor(user) // Set the author to be the user
+                    .WithTimestamp(activity.CreatedAt) // Set the timestamp to when the activity was created
+                    .WithDescription($"{activity.Emote} {activity.State}") // Set the embed description to the activity
+                    .Build());
+            });
         }
     }
 }

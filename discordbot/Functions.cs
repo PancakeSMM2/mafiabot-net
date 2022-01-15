@@ -454,5 +454,16 @@ namespace Mafiabot
                 }
             });
         }
+
+        // Gets a user's current custom status
+        public static async Task<CustomStatusGame> GetCustomStatusAsync(IUser user)
+        {
+            // Execute asynchronously
+            return await Task.Run(() =>
+            {
+                // Return the user's custom status activity
+                return (CustomStatusGame)user.Activities.FirstOrDefault((activity) => activity.Type == ActivityType.CustomStatus);
+            });
+        }
     }
 }
