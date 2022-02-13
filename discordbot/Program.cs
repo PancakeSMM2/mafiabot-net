@@ -45,8 +45,10 @@ namespace Mafiabot
                 defaultConfig.Add("ArchivalChannelsPath", "archivalChannels.json"); // Default file path
                 defaultConfig.Add("ImagesOnlyPath", "imagesOnly.json"); // Default file path
                 defaultConfig.Add("LogChannelsPath", "logChannels.json"); // Default file path
-                defaultConfig.Add("PurgeChannelsPath", "purgeChannels.json"); // Default file path
                 defaultConfig.Add("PrideFlagsPath", "prideFlags.json"); // Default file path
+                defaultConfig.Add("PurgeChannelsPath", "purgeChannels.json"); // Default file path
+                defaultConfig.Add("PurgeChannelsPath", "purgeChannels.json"); // Default file path
+                defaultConfig.Add("EmojiImageFolderPath", "EmojiImages"); // Default file path
 
                 defaultConfig.Add("Token", "YOUR-TOKEN-HERE"); // Field to input the twitch bot token
                 defaultConfig.Add("GoogleProjectId", "YOUR-PROJECT-ID-HERE"); // Field to input the google project ID
