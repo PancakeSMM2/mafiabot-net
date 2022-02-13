@@ -223,10 +223,14 @@ namespace Mafiabot
                         // If the channel isn't a guild text channel, skip this channel
                         if (channel is not SocketTextChannel textChannel) continue;
 
+                        // If not in development mode
+                        if (!Config.Development)
+                        {
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                        // Send the embed
-                        textChannel.SendMessageAsync(embed: embed.Build());
+                            // Send the embed
+                            textChannel.SendMessageAsync(embed: embed.Build());
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                        }
                     }
                 }
                 catch (Exception ex) // In case of an exception
@@ -322,6 +326,7 @@ namespace Mafiabot
                 LogChannelsPath = (string)loaded["LogChannelsPath"];
                 PrideFlagsPath = (string)loaded["PrideFlagsPath"];
                 PurgeChannelsPath = (string)loaded["PurgeChannelsPath"];
+                EmojiImageFolderPath = (string)loaded["EmojiImageFolderPath"];
 
                 Token = (string)loaded["Token"];
                 GoogleProjectId = (string)loaded["GoogleProjectId"];
@@ -337,6 +342,7 @@ namespace Mafiabot
             public static string LogChannelsPath; // The file path to the log channels
             public static string PrideFlagsPath; // The file path to the pride flags
             public static string PurgeChannelsPath; // The file path to the purge channels
+            public static string EmojiImageFolderPath; // The file path to a folder containing an image for every unicode emoji in png format. Images should be named following this format: $"{Unicode code point of first rune, excluding the U+}[-{Unicode code point of all other runes, excluding all U+s}].png"
 
             public static string Token; // The bot's token
             public static string GoogleProjectId; // The Google Cloud project ID
@@ -410,9 +416,12 @@ namespace Mafiabot
             _client = client;
         }
 
+        // Called on startup by Program
         public async Task InstallInteractionsAsync()
         {
+            // Add OnClientReady to be called on Ready
             _client.Ready += OnClientReady;
+            // Register handlers for all interaction types
             _client.SlashCommandExecuted += HandleSlashAsync;
             _client.MessageCommandExecuted += HandleMessageAsync;
             _client.UserCommandExecuted += HandleUserAsync;
@@ -420,7 +429,8 @@ namespace Mafiabot
             _client.ButtonExecuted += HandleButtonAsync;
             _client.SelectMenuExecuted += HandleMenuAsync;
 
-            await _interactions.AddModulesAsync(
+            // Register all interactions
+            _ = await _interactions.AddModulesAsync(
                 assembly: Assembly.GetEntryAssembly(),
                 services: null);
         }
@@ -435,9 +445,12 @@ namespace Mafiabot
             else await _interactions.RegisterCommandsToGuildAsync(Config.DevelopmentServerId, true); // If in a development environment, register commands to the development guild
         }
 
+        // Functions to handle all interaction types
         public async Task HandleSlashAsync(SocketSlashCommand slash)
         {
+            // Create the InteractionContext
             SocketInteractionContext context = new(_client, slash);
+            // Execute the command with it
             await _interactions.ExecuteCommandAsync(context, services: null);
         }
 

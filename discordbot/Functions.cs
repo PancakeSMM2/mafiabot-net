@@ -465,5 +465,14 @@ namespace Mafiabot
                 return (CustomStatusGame)user.Activities.FirstOrDefault((activity) => activity.Type == ActivityType.CustomStatus);
             });
         }
+
+        public static async Task<FileStream> GetEmojiImageAsync(string fileName)
+        {
+            return await Task.Run(() =>
+            {
+                FileStream image = File.OpenRead($"{Config.EmojiImageFolderPath}\\{fileName}");
+                return image;
+            });
+        }
     }
 }

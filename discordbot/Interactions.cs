@@ -4,36 +4,50 @@ using Discord.WebSocket;
 using Google.Cloud.Translation.V2;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using System.Globalization;
+using SixLabors.ImageSharp.Processing;
 using static Mafiabot.Functions;
 using static Mafiabot.Program;
+using SixLabors.ImageSharp.Formats.Png;
+using Image = SixLabors.ImageSharp.Image;
 
 namespace Mafiabot
 {
     public class Interactions : InteractionModuleBase<SocketInteractionContext>
     {
-        /** 
+        /*
          * The Ping command.
         */
         [SlashCommand("ping", "Replies with 🏓, and the delay")]
         public async Task PingAsync()
         {
+            // Defer. Almost entirely unnecessary, as this command responds rather quickly, but just in case.
+            await DeferAsync(ephemeral: true); // Defer ephemerally
             // Store when the command message was sent, in milliseconds
             long commandSentMs = Context.Interaction.CreatedAt.ToUnixTimeMilliseconds();
             // Calculate the delay between when the command was sent and now
             long delay = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - commandSentMs;
 
-            // Respond to the message with the number of milliseconds of delay, and then a ping-pong paddle emoji
-            await RespondAsync($"{delay} ms delay 🏓", ephemeral: true);
+            // Respond with an embed
+            await ModifyOriginalResponseAsync((x) => 
+            {
+                x.Embed = new EmbedBuilder()
+                    .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                    .WithDescription($"🏓 {delay} milliseconds delay") // Set the description, including the calculated delay
+                    .Build(); // Build the EmbedBuilder
+            });
         }
 
-        /** 
+        /*
          * The ChangeStatus command.
          * To-do:
          * - Add a way to reset the bot's status
          */
-        [MessageCommand("Change Status to Message")]
+        [MessageCommand("Change Status")]
         public async Task ChangeStatusAsync(SocketUserMessage message) => await ChangeStatusAsync(message.Content); // Execute ChangeStatusAsync() with the message's content
 
         // Define an enum for all valid bot activity types
@@ -49,7 +63,9 @@ namespace Mafiabot
         [SlashCommand("changestatus", "Changes the bot's status.")]
         public async Task ChangeStatusAsync([Summary("status", "The status text to set.")] string newActivity, [Summary("type", "The status type to set.")] BotActivityType activityType = BotActivityType.Playing)
         {
-            Console.WriteLine((ActivityType)activityType);
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // Set the activity (of given type) to the supplied string
             await Context.Client.SetActivityAsync(new Game(newActivity, (ActivityType)activityType));
             // Create a string to store the response emote in (defaulting to 🎮, for Playing)
@@ -76,10 +92,14 @@ namespace Mafiabot
             }
 
             // Respond with the emotes
-            await RespondAsync("✅" + responseEmote, ephemeral: true);
+            _ = await ModifyOriginalResponseAsync((x) =>
+            {
+                // Set the previous response's content to the emotes
+                x.Content = $"✅{responseEmote}";
+            });
         }
 
-        /** 
+        /*
          * The ImagesOnly command.
          */
         [SlashCommand("imagesonly", "Sets a channel to be images only.")]
@@ -89,17 +109,26 @@ namespace Mafiabot
             // Execute asynchronously
             await Task.Run(async () =>
             {
+                // Defer
+                await DeferAsync(ephemeral: true);
+
                 // If a channel is not provided, default to the active channel
                 ulong imagesOnlyId = channel == null ? Context.Channel.Id : channel.Id;
                 // Toggle the channel the command was sent from in imagesOnly.json, and store whether it was added or removed
                 bool added = await ToggleUlongFromJSONAsync(imagesOnlyId, Config.ImagesOnlyPath);
 
-                // Respond with the emotes, ✅ if the channel is now images only, 🚫 if the channel is no longer images only, followed by 🖼
-                await RespondAsync((added ? "✅" : "🚫") + "🖼", ephemeral: true);
+                // Respond with an embed
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Embed = new EmbedBuilder()
+                    .WithColor(GetRainbowColor()) // With a random rainbow color
+                    .WithDescription(added ? "✅🖼 Channel is now image-only" : "🚫🖼 Channel is no longer image-only") // Set the description, based off of whether the channel was made image-only or was made not image-only
+                    .Build(); // Build the EmbedBuilder
+                });
             });
         }
 
-        /** 
+        /*
          * The ChangePfp command.
          */
         [MessageCommand("Change PFP")]
@@ -108,6 +137,9 @@ namespace Mafiabot
             // Execute asynchronously
             await Task.Run(async () =>
             {
+                // Defer
+                await DeferAsync(ephemeral: true);
+
                 string url; // Declare an empty variable to hold the attachment's URL
                 // Try-catch block to try and get the URL
                 try
@@ -115,57 +147,172 @@ namespace Mafiabot
                     // Set the URL to be the URL of the first attachment that has a designated width (which only images have)
                     url = message.Attachments.First((Attachment attached) => attached.Width != null).Url;
                 }
-                catch
+                catch // If it didn't find an attached image
                 {
-                    // If that fails (due to not finding a valid attachment), respond with 🚫📸 to indicate that it did not find an image
-                    await RespondAsync("🚫📸", ephemeral: true);
-                    // Then return
-                    return;
+                    // Try to find an attached embed instead
+                    try
+                    {
+                        // Set the URL to be the URL of the image attached to the first embed that has an attached image
+                        url = message.Embeds.First((x) => x.Image.HasValue).Image.Value.Url;
+                    }
+                    catch // If it didn't find a valid embed
+                    {
+
+                        // If that fails (due to not finding a valid attachment or embed), respond with an embed indicating that it did not find an image
+                        _ = await ModifyOriginalResponseAsync((x) =>
+                        {
+                            // Set the embed
+                            x.Embed = new EmbedBuilder()
+                                .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                                .WithDescription("🚫📸 No valid image or embed found.") // Set the description
+                                .Build(); // Build the EmbedBuilder
+                        });
+                        // Then return
+                        return;
+                    }
                 }
 
                 // Attempt to change the bot's avatar, and store whether it was successful
                 bool successful = await ChangeAvatarAsync(url, Context.Client.CurrentUser);
 
-                if (successful) await RespondAsync("✅", ephemeral: true); // If successful, respond with ✅ (indicating as such)
-                else await RespondAsync("🚫⏲️", ephemeral: true); // If unsuccessful, respond with 🚫⏲️ (indicating that avatar changes are currently on cooldown)
+                // Whether the attempted change was successful
+                if (successful)
+                {
+                    // Respond with ✅
+                    await ModifyOriginalResponseAsync((x) =>
+                    {
+                        x.Content = "✅";
+                    });
+                }
+                else
+                {
+                    // If unsuccessful, respond with an embed indicating that avatar changes are currently on cooldown
+                    _ = await ModifyOriginalResponseAsync((x) => 
+                    { 
+                        // Set the embed
+                        x.Embed = new EmbedBuilder()
+                            .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                            .WithDescription("🚫⏲️ Avatar changes are currently on cooldown. Try again in 10 minutes.") // Set the description
+                            .Build(); // Build the EmbedBuilder
+                    });
+                }
             });
         }
 
-        /** 
+        [SlashCommand("changepfp", "Changes the bot's profile picture to a provided image")]
+        public async Task ChangePfpAsync([Summary("picture", "The bot's new profile picture")] IAttachment attachment)
+        {
+            // Execute asynchronously
+            await Task.Run(async () =>
+            {
+                await DeferAsync(ephemeral: true);
+                
+                // If the attachment is not an image
+                if (attachment.Width == null) // All images have width properties, all non-images don't
+                {
+                    // Respond, and then return
+                    _ = await ModifyOriginalResponseAsync((x) => 
+                    {
+                        x.Embed = new EmbedBuilder()
+                            .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                            .WithDescription("🚫📸 Provided attachment is not a valid image.") // Set the description
+                            .Build(); // Build the EmbedBuilder
+                    });
+                    return;
+                }
+
+                // Attempt to change the bot's avatar, and store whether it was successful
+                bool successful = await ChangeAvatarAsync(attachment.Url, Context.Client.CurrentUser);
+
+                // Whether the attempted change was successful
+                if (successful)
+                {
+                    await RespondAsync("✅", ephemeral: true); // If successful, respond with ✅ (indicating as such)
+                }
+                else
+                {
+                    // If unsuccessful, respond with an embed indicating that avatar changes are currently on cooldown
+                    _ = await ModifyOriginalResponseAsync((x) => 
+                    {
+                        x.Embed = new EmbedBuilder()
+                            .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                            .WithDescription("🚫⏲️ Avatar changes are currently on cooldown. Try again in 10 minutes.") // Set the description
+                            .Build(); // Build the EmbedBuilder
+                    });
+                }
+            });
+        }
+
+        /*
          * The ResetPfp command.
          */
         [SlashCommand("resetpfp", "Resets the bot's profile picture to the default.")]
         public async Task ResetPfpAsync()
         {
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // Reset the avatar, and store whether it was successful
             bool successful = await ResetAvatarAsync(Context.Client.CurrentUser);
 
-            if (successful) await RespondAsync("✅", ephemeral: true); // If successful, respond with ✅ (indicating as such)
-            else await RespondAsync("🚫⏲️", ephemeral: true); // If unsuccessful, respond with 🚫⏲️ (indicating that avatar changes are currently on cooldown)
+            // Whether the attempted change was successful
+            if (successful)
+            {
+                // If successful, respond with ✅ (indicating as such)
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Content = "✅";
+                });
+            }
+            else
+            {
+                // If unsuccessful, respond with an embed indicating that avatar changes are currently on cooldown
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Embed = new EmbedBuilder()
+                        .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                        .WithDescription("🚫⏲️ Avatar changes are currently on cooldown. Try again in 10 minutes.") // Set the description
+                        .Build(); // Build the EmbedBuilder
+                });
+            }
         }
 
-        /**
+        /*
          * The TimeDisplay command.
          */
         [MessageCommand("Time Display")]
         public async Task TimeConvertAsync(SocketUserMessage message) => await TimeConvertAsync(message.Content); // Run TimeConvertAsync with the message's content
 
         [SlashCommand("timedisplay", "Displays the given time with Discord's timestamp formatting")]
-        public async Task TimeConvertAsync([Summary("time", "The time to display, such as\"8:00 AM\" or \"May 8, 1988 5:49 PM\", in UTC")] string time)
+        public async Task TimeConvertAsync([Summary("time", "The time to display (e.g. May 8, 1988 5:49 PM) in UTC. Or, input a Unix timestamp (e.g. 1644703914).")] string time)
         {
             // Parse the provided time into a DateTime object
             DateTimeOffset parsed;
             try
             {
-                // Try to parse the provided string into a DateTimeOffset
-                parsed = DateTimeOffset.Parse(time, null, System.Globalization.DateTimeStyles.AllowWhiteSpaces);
+                // First, assume the provided time is a unix timestamp, and try to convert that way
+                long timestamp = long.Parse(time.Trim(), NumberStyles.Any); // Parse the string
+                // Parse the timestamp to a 
+                parsed = DateTimeOffset.FromUnixTimeSeconds(timestamp);
             }
             catch (Exception)
             {
-                // If the parse fails, respond
-                await RespondAsync("📆❓", ephemeral: true);
-                // Return
-                return;
+                try
+                {
+                    // Try to parse the provided string into a DateTimeOffset
+                    parsed = DateTimeOffset.Parse(time, null, DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AdjustToUniversal);
+                }
+                catch (Exception)
+                {
+                    // If the parse fails, respond
+                    await RespondAsync(embed: new EmbedBuilder()
+                        .WithColor(GetRainbowColor())
+                        .WithDescription("📆❓ Input could not be parsed.")
+                        .Build(),
+                        ephemeral: true);
+                    // Return
+                    return;
+                }
             }
 
             // Respond with both timestamps
@@ -177,7 +324,7 @@ namespace Mafiabot
                 .Build());
         }
 
-        /**
+        /*
          * The Pride command.
          */
 
@@ -208,37 +355,45 @@ namespace Mafiabot
         [SlashCommand("pride", "Sends a specified pride flag")]
         public async Task PrideFlagAsync([Summary("flag", "The flag to display")] PrideFlags flagName)
         {
+            // Defer
+            await DeferAsync(ephemeral: false);
+
             // Get the pride flag
             PrideFlag flag = await GetPrideFlagAsync(flagName.ToString().Replace('_', '-'));
 
-            // Construct a reply embed
-            EmbedBuilder embed = new EmbedBuilder()
-                .WithColor(GetRainbowColor()) // Random rainbow color
-                .WithImageUrl(flag.Url) // Display the flag
-                .WithAuthor("Pride", "https://media.discordapp.net/attachments/716108846816297040/823648970215522304/image.png"); // Set the author
-
             // Reply with the embed
-            await RespondAsync(embed: embed.Build());
+            _ = await ModifyOriginalResponseAsync((x) =>
+            {
+                x.Embed = new EmbedBuilder()
+                    .WithColor(GetRainbowColor()) // Random rainbow color
+                    .WithImageUrl(flag.Url) // Display the flag
+                    .WithAuthor("Pride", "https://media.discordapp.net/attachments/716108846816297040/823648970215522304/image.png") // Set the author
+                    .Build(); // Build the EmbedBuilder
+            });
         }
 
         [SlashCommand("pride-list", "Lists all supported pride flags and their aliases")]
         public async Task PrideFlagAsync()
         {
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // Get the pride flag names
             string names = await GetPrideFlagNamesAsync();
 
             // Respond with a reply embed
-            await RespondAsync(embed: new EmbedBuilder()
-                .WithColor(GetRainbowColor()) // Random rainbow color
-                .WithAuthor("Pride", "https://media.discordapp.net/attachments/716108846816297040/823648970215522304/image.png") // Set the author
-                .AddField("!pride <Flag>", "\u200b") // First field, with the command syntax
-                .AddField("Flag", "One of the supported pride flags, as listed below. If you request a flag that isn't supported, you'll just get the progressive flag. If you want a flag added to this, lemme know!") // Second field, describing the Flag argument
-                .AddField("SupportedFlags", names) // Third field, with the pride flag names
-                .WithImageUrl("https://cdn.discordapp.com/attachments/716108846816297040/823668797248372766/Z.png") // Send the progressive flag
-                .Build(), ephemeral: true);
+            _ = await ModifyOriginalResponseAsync((x) =>
+            {
+                x.Embed = new EmbedBuilder()
+                    .WithColor(GetRainbowColor()) // Random rainbow color
+                    .WithAuthor("Pride", "https://media.discordapp.net/attachments/716108846816297040/823648970215522304/image.png") // Set the author
+                    .AddField("SupportedFlags", names) // Third field, with the pride flag names
+                    .WithImageUrl("https://cdn.discordapp.com/attachments/716108846816297040/823668797248372766/Z.png") // Send the progressive flag
+                    .Build();
+            });
         }
 
-        /**
+        /*
          * The Translate command.
          */
         // Create the translation client with default credentials
@@ -258,10 +413,11 @@ namespace Mafiabot
                 {
                     // Respond
                     await RespondAsync(embed: new EmbedBuilder()
-                        .WithAuthor("Translate", "https://cdn.discordapp.com/attachments/716108846816297040/823295348474642492/1024px-Google_Translate_logo.png")
-                        .WithColor(GetRainbowColor())
-                        .WithDescription("Cycles are limited at a maximum of 50\nNote that increased cycles have diminishing returns")
-                        .Build(), ephemeral: true);
+                        .WithAuthor("Translate", "https://cdn.discordapp.com/attachments/716108846816297040/823295348474642492/1024px-Google_Translate_logo.png") // Set the author
+                        .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                        .WithDescription("🚫 Cycles are limited at a maximum of 50.\nNote that increased cycles have diminishing returns.") // Set the description
+                        .Build(), // Build the EmbedBuilder
+                        ephemeral: true); // Respond ephemerally
                     // Don't execute the rest of the command
                     return;
                 }
@@ -331,9 +487,9 @@ namespace Mafiabot
 
                     // Edit the reply message to show the new embed, without waiting for it to finish editing (for performance)
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                    Context.Interaction.ModifyOriginalResponseAsync((properties) =>
+                    Context.Interaction.ModifyOriginalResponseAsync((x) =>
                     {
-                        properties.Embed = embed.Build();
+                        x.Embed = embed.Build();
                     });
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
@@ -361,7 +517,7 @@ namespace Mafiabot
             });
         }
 
-        /**
+        /*
          * The Archive command.
          */
         [SlashCommand("archive", "Sets one given channel to be archived in another given channel")]
@@ -377,6 +533,9 @@ namespace Mafiabot
         [SlashCommand("archive-id", "Sets one given channel to be archived in another given channel")]
         public async Task MarkArchiveAsync([Summary("target-channel-id", "The ID of the channel to archive to")] ulong targetChannelId, [Summary("source-channel-id", "The ID of the channel to archive from, defaulting to this channel")] ulong? sourceChannelId = null)
         {
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // If there is no provided source channel id, default to the contextual channel id
             if (sourceChannelId == null) sourceChannelId = Context.Channel.Id;
             // Convert the nullable souceChannelId to the non-nullable sourceId. Should never return, but just in case.
@@ -388,13 +547,22 @@ namespace Mafiabot
             // Convert the SocketChannel returned by GetChannel and convert it to a SocketTextChannel. If it isn't a guild text channel, return.
             if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel)
             {
-                // Respond with an error message
-                await RespondAsync("❌ Source channel must be a text channel.", ephemeral: true);
+                // Respond with an error message, then return
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Embed = new EmbedBuilder()
+                        .WithColor(GetRainbowColor()) // Set color to a random rainbow color
+                        .WithDescription("🚫 Source channel must be a text channel.") // Set description
+                        .Build(); // Build the EmbedBuilder
+                });
                 return;
             }
 
             // Respond  
-            await RespondAsync("✅", ephemeral: true);
+            _ = await ModifyOriginalResponseAsync((x) =>
+            {
+                x.Content = "✅";
+            });
 
             // Reply
             IUserMessage reply = await sourceChannel.SendMessageAsync(embed: new EmbedBuilder()
@@ -423,7 +591,7 @@ namespace Mafiabot
             }
         }
 
-        /**
+        /*
          * The StopArchive command.
          */
         [SlashCommand("stoparchive", "Sets the given channel to no longer be archived.")]
@@ -432,6 +600,9 @@ namespace Mafiabot
         [SlashCommand("stoparchive-id", "Sets the given channel to no longer be archived.")]
         public async Task StopArchiveAsync([Summary("source-channel-id", "The ID of the source channel to stop archiving, defaulting to this channel")] ulong? sourceChannelId = null)
         {
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // If sourceChannelId is not provided, default to the channel id of the contextual channel
             if (sourceChannelId == null) sourceChannelId = Context.Channel.Id;
             // Convert from nullable ulong to non-nullable ulong. Should never return, but just in case.
@@ -443,13 +614,23 @@ namespace Mafiabot
             // Convert the SocketChannel returned by GetChannel into a SocketTextChannel. If the channel is not a guild text channel, return.
             if (Context.Client.GetChannel(sourceId) is not SocketTextChannel sourceChannel)
             {
-                await RespondAsync("Source channel must be a text channel.", ephemeral: true);
+                // Respond with an error message, then return
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Embed = new EmbedBuilder()
+                        .WithColor(GetRainbowColor()) // Set color to a random rainbow color
+                        .WithDescription("🚫 Source channel must be a text channel.") // Set description
+                        .Build(); // Build the EmbedBuilder
+                });
                 return;
             }
 
             // Respond
-            await RespondAsync("✅", ephemeral: true);
-            
+            _ = await ModifyOriginalResponseAsync((x) =>
+            {
+                x.Content = "✅";
+            });
+
             // Send an embed in the source channel
             IUserMessage reply = await sourceChannel.SendMessageAsync(embed: new EmbedBuilder()
                 .WithAuthor("Archival", "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwww.emoji.co.uk%2Ffiles%2Ftwitter-emojis%2Fobjects-twitter%2F11033-scroll.png&f=1&nofb=1") // Set the author
@@ -476,20 +657,26 @@ namespace Mafiabot
             }
         }
 
-        /**
+        /*
          * The Purge command.
          */
         [SlashCommand("purge", "Instantly triggers channel purging. Can only be used by the bot's owner.")]
         [RequireOwner]
         public async Task TriggerPurgeAsync()
         {
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // Owner-only debug command that immediately triggers channel purging
             await PurgeChannelsAsync();
             // Respond with ✅
-            await RespondAsync("✅", ephemeral: true);
+            _ = await ModifyOriginalResponseAsync((x) => 
+            { 
+                x.Content = "✅";
+            });
         }
 
-        /**
+        /*
          * The Help command.
          */
 
@@ -511,12 +698,18 @@ namespace Mafiabot
             stoparchive_id = 11,
             purge = 12,
             help = 13,
-            status = 14
+            status = 14,
+            changenickname = 15,
+            resetnickname = 16,
+            jumboify = 17
         }
 
         [SlashCommand("help", "Lists the bots different commands.")]
         public async Task ListCommandsAsync([Summary("command", "A command to get more detail on")] SlashCommands command = SlashCommands.all)
         {
+            // Defer
+            await DeferAsync(ephemeral: true);
+
             // Get the commands that can be executed in the current context
             ICollection<SlashCommandInfo> commands = (ICollection<SlashCommandInfo>)_interactions.SlashCommands;
 
@@ -542,11 +735,14 @@ namespace Mafiabot
                     helpMessage += $"\n{testCommand.Description}";
                 }
 
-                // Respond with the embed
-                await RespondAsync(embed: new EmbedBuilder()
-                    .WithColor(GetRainbowColor())
-                    .WithDescription(helpMessage)
-                    .Build(), ephemeral: true);
+                // Respond with an embed
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Embed = new EmbedBuilder()
+                        .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
+                        .WithDescription(helpMessage) // Set the description
+                        .Build(); // Build the EmbedBuilder
+                });
             }
             else
             {
@@ -585,11 +781,14 @@ namespace Mafiabot
                 }
 
                 // Respond with the embed
-                await RespondAsync(embed: embed.Build(), ephemeral: true);
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Embed = embed.Build();
+                });
             }
         }
 
-        /**
+        /*
          * The Status command
          */
         [UserCommand("Display Status")]
@@ -604,8 +803,12 @@ namespace Mafiabot
 
                 if (activity == default) // If the user has no custom status
                 {
-                    // Respond with a couple emojis to indicate that the bot couldn't find that user's custom status
-                    await RespondAsync("❓🗒");
+                    // Respond ephemerally with a couple emojis to indicate that the bot couldn't find that user's custom status
+                    await RespondAsync(embed: new EmbedBuilder()
+                        .WithColor(GetRainbowColor())
+                        .WithDescription("❓🗒 Found no valid custom status on that user.")
+                        .Build(), 
+                        ephemeral: true);
                     return; // Return
                 }
 
@@ -616,6 +819,172 @@ namespace Mafiabot
                     .WithTimestamp(activity.CreatedAt) // Set the timestamp to when the activity was created
                     .WithDescription($"{activity.Emote} {activity.State}") // Set the embed description to the activity
                     .Build());
+            });
+        }
+
+        /*
+         * The ChangeNickname command
+         */
+        // MessageCommand variation of the command
+        [MessageCommand("Change Nickname")]
+        [RequireContext(ContextType.Guild)]
+        public async Task ChangeNicknameAsync(IMessage message)
+        {
+            // Execute the regular command with the message's content
+            await ChangeNicknameAsync(message.Content);
+        }
+
+        // SlashCommand variation
+        [SlashCommand("changenickname", "Changes the bot's nickname in this server")]
+        [RequireContext(ContextType.Guild)] // Can only be executed in a guild, as nicknames do not exist in DMs or in Group DMs
+        public async Task ChangeNicknameAsync([Summary("nickname", "The bot's new nickname")] string nickname)
+        {
+            // Execute asynchronously
+            await Task.Run(async () =>
+            {
+                await DeferAsync(ephemeral: true);
+
+                // Try-catch, in case the provided nickname was invalid
+                try
+                {
+                    // If the provided nickname is more than 32 characters long
+                    if (nickname.Length > 32)
+                    {
+                        // Throw an exception, to trigger the catch block
+                        throw new Exception("Provided nickname too long.");
+                    }
+
+                    // Get the bot's user in the guild 
+                    SocketGuildUser botUser = Context.Guild.GetUser(Context.Client.CurrentUser.Id);
+                    // Modify the bot's profile
+                    await botUser.ModifyAsync((x) =>
+                    {
+                        // Set the bot's nickname to the provided nickname
+                        x.Nickname = nickname;
+                    });
+
+                    // Respond to the message with a success, ephemerally
+                    await ModifyOriginalResponseAsync((x) =>
+                    {
+                        x.Content = "✅";
+                    });
+                }
+                catch (Exception ex) // In case the provided nickname was incorrect
+                {
+                    // Respond with a failure, ephemerally
+                    _ = await ModifyOriginalResponseAsync((x) =>
+                    {
+                        x.Embed = new EmbedBuilder()
+                            .WithColor(GetRainbowColor())
+                            .WithDescription($"🚫 {ex.Message}")
+                            .Build();
+                    });
+                }
+            });
+        }
+
+        /*
+         * The ResetNickname command
+         */
+        [SlashCommand("resetnickname", "Removes the bot's nickname in this server")]
+        public async Task ResetNicknameAsync()
+        {
+            await Task.Run(async () =>
+            {
+                // Defer
+                await DeferAsync(ephemeral: true);
+
+                // Get the bot's GuildUser in the current guild
+                SocketGuildUser botUser = Context.Guild.GetUser(Context.Client.CurrentUser.Id);
+                // Modify it
+                await botUser.ModifyAsync((x) =>
+                {
+                    // Reset the nickname
+                    x.Nickname = null;
+                });
+
+                // Respond with an emote
+                _ = await ModifyOriginalResponseAsync((x) =>
+                {
+                    x.Content = "✅";
+                });
+            });
+        }
+
+        /*
+         * The Jumboify command
+         */
+        [SlashCommand("jumboify", "Takes a given emoji and enlarges it")]
+        public async Task JumboEmoteAsync([Summary("emoji", "The emoji to enlarge. Supports both custom and non-custom emojis")] string emoteString)
+        {
+            // Execute asynchronously
+            await Task.Run(async () =>
+            {
+                try
+                {
+                    // Checks whether the emote is custom, based off of whether the string starts with a <
+                    bool emoteIsCustom = emoteString.Trim()[0] == '<';
+
+                    // Declare a variable to store the found emote image
+                    Image emoteImage;
+
+                    // Switch statement based off of whether the emote is a custom emote
+                    switch (emoteIsCustom)
+                    {
+                        // If the emote is not a custom emote
+                        case false:
+                            // Defines an empty string to store the image's file
+                            string imageFileName = string.Empty;
+                            // For each rune in the string
+                            foreach (Rune rune in emoteString.EnumerateRunes())
+                            {
+                                // Append to the image file name
+                                imageFileName += imageFileName == string.Empty // If this was the first rune in the string
+                                    ? $"{rune.Value:X4}"   // Append the Unicode data point of that rune
+                                    : $"-{rune.Value:X4}"; // Append the Unicode data point of that rune with a hyphen before it
+                            }
+                            // Append a .png
+                            imageFileName += ".png";
+                            // Get the emoji image of the given name
+                            FileStream emoji = await GetEmojiImageAsync(imageFileName);
+
+                            // Set the emote image
+                            emoteImage = Image.Load(emoji);
+                            // Exit the switch statement
+                            break;
+                        // If the emote is a custom emote
+                        case true:
+                            // Parse the string as a custom emote
+                            Emote emote = Emote.Parse(emoteString.Trim());
+                            // Get the data for the emote's image
+                            Stream emoteData = GetStreamFromImageUrl(emote.Url);
+
+                            // Set the emote image
+                            emoteImage = Image.Load(emoteData);
+                            // Exit the switch statement
+                            break;
+                    }
+
+                    // Edit the image
+                    emoteImage.Mutate((x) =>
+                    {
+                        // Resize it to be 256 pixels across, keeping the aspect ratio the same
+                        _ = x.Resize(256, 0, KnownResamplers.Spline); // Uses the Spline resampler, for higher-quality resizing
+                    });
+
+                    // Create a memory stream to store the new resized image
+                    MemoryStream resizedImage = new();
+                    // Save the edited image to the stream, as a png
+                    await emoteImage.SaveAsync(resizedImage, new PngEncoder());
+
+                    // Respond with the image, naming the file "emote.png"
+                    await RespondWithFileAsync(new FileAttachment(resizedImage, "emote.png"));
+                }
+                catch (Exception) // In case of an error, such as an invalid emote string
+                {
+                    // Respond with an emoji, ephemerally
+                    await RespondAsync("🚫", ephemeral: true);
+                }
             });
         }
     }
