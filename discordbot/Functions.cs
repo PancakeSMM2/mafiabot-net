@@ -10,7 +10,7 @@ using static Mafiabot.Program;
 
 namespace Mafiabot
 {
-    static class Functions
+    internal static class Functions
     {
         // Toggles an ulong from an ulong array stored in a JSON file (or possibly another file, just as long as it can be read by the File.ReadAllText function and is formatted like JSON)
         public static async Task<bool> ToggleUlongFromJSONAsync(ulong toggle, string filePath)
@@ -46,7 +46,8 @@ namespace Mafiabot
 
                     // Replace the first ulong array with the replacement ulong array
                     output = replacement;
-                } else // If the ulong array does not have the ulong, it should be added
+                }
+                else // If the ulong array does not have the ulong, it should be added
                 {
                     // Create a new ulong array to replace the old one, as long as the previous one + 1
                     ulong[] replacement = new ulong[output.Length + 1];
@@ -174,7 +175,10 @@ namespace Mafiabot
         public static async Task<bool> ChangeAvatarAsync(string reference, SocketSelfUser user, ImageReferenceMethod method = ImageReferenceMethod.Url, bool overrideTimer = false)
         {
             // If it's too early to change the avatar again, return a failure
-            if (nextAvatarChange >= DateTimeOffset.UtcNow && !overrideTimer) return false;
+            if (!(nextAvatarChange < DateTimeOffset.UtcNow || overrideTimer || Config.Development)) // If overrideTimer is true, skip this check. Do the same if in development mode
+            {
+                return false;
+            }
 
             // Get the image data in a stream, depending on the ImageReferenceMethod
             Stream imageData = method == ImageReferenceMethod.Url // If the method is via URL
@@ -213,7 +217,7 @@ namespace Mafiabot
             byte[] imageData = null;
 
             // Create a webclient to use to download the image data
-            using (var wc = new System.Net.WebClient())
+            using (System.Net.WebClient wc = new())
                 // Set the image data to the downloaded data from the URL
                 imageData = wc.DownloadData(url);
 
@@ -328,7 +332,7 @@ namespace Mafiabot
         }
 
         // Create a new random generator
-        private readonly static Random random = new();
+        private static readonly Random random = new();
 
         // Returns a random integer between 0 (inclusive) and the provided maximum (exclusive)
         public static int RandomInt(int exclusiveMaximum)
@@ -345,7 +349,7 @@ namespace Mafiabot
         }
 
         // Defines a static color array to hold all of the colors of the rainbow
-        static readonly Color[] rainbowColors = new Color[]
+        private static readonly Color[] rainbowColors = new Color[]
             {
                 new Color(0xe60000), // Red
                 new Color(0xd98d00), // Orange
@@ -463,6 +467,15 @@ namespace Mafiabot
             {
                 // Return the user's custom status activity
                 return (CustomStatusGame)user.Activities.FirstOrDefault((activity) => activity.Type == ActivityType.CustomStatus);
+            });
+        }
+
+        public static async Task<FileStream> GetEmojiImageAsync(string fileName)
+        {
+            return await Task.Run(() =>
+            {
+                FileStream image = File.OpenRead($"{Config.EmojiImageFolderPath}\\{fileName}");
+                return image;
             });
         }
     }
