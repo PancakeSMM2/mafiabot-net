@@ -962,7 +962,7 @@ namespace Mafiabot
                             // Append a .png
                             imageFileName += ".png";
                             // Get the emoji image of the given name
-                            FileStream emoji = await GetEmojiImageAsync(imageFileName.ToLower(new CultureInfo("en-US")));
+                            FileStream emoji = await GetEmojiImageAsync(imageFileName);
 
                             // Set the emote image
                             emoteImage = Image.Load(emoji);
