@@ -2,17 +2,17 @@
 using Discord.Interactions;
 using Discord.WebSocket;
 using Google.Cloud.Translation.V2;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Processing;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Globalization;
-using SixLabors.ImageSharp.Processing;
 using static Mafiabot.Functions;
 using static Mafiabot.Program;
-using SixLabors.ImageSharp.Formats.Png;
 using Image = SixLabors.ImageSharp.Image;
 
 namespace Mafiabot
@@ -33,7 +33,7 @@ namespace Mafiabot
             long delay = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - commandSentMs;
 
             // Respond with an embed
-            await ModifyOriginalResponseAsync((x) => 
+            await ModifyOriginalResponseAsync((x) =>
             {
                 x.Embed = new EmbedBuilder()
                     .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
@@ -48,13 +48,16 @@ namespace Mafiabot
          * - Add a way to reset the bot's status
          */
         [MessageCommand("Change Status")]
-        public async Task ChangeStatusAsync(SocketUserMessage message) => await ChangeStatusAsync(message.Content); // Execute ChangeStatusAsync() with the message's content
+        public async Task ChangeStatusAsync(SocketUserMessage message)
+        {
+            await ChangeStatusAsync(message.Content); // Execute ChangeStatusAsync() with the message's content
+        }
 
         // Define an enum for all valid bot activity types
         public enum BotActivityType
         {
             // Bots can have any activity type other than CustomStatus or Streaming
-            Playing = ActivityType.Playing, 
+            Playing = ActivityType.Playing,
             Listening = ActivityType.Listening,
             Watching = ActivityType.Watching,
             Competing = ActivityType.Competing
@@ -187,8 +190,8 @@ namespace Mafiabot
                 else
                 {
                     // If unsuccessful, respond with an embed indicating that avatar changes are currently on cooldown
-                    _ = await ModifyOriginalResponseAsync((x) => 
-                    { 
+                    _ = await ModifyOriginalResponseAsync((x) =>
+                    {
                         // Set the embed
                         x.Embed = new EmbedBuilder()
                             .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
@@ -206,12 +209,12 @@ namespace Mafiabot
             await Task.Run(async () =>
             {
                 await DeferAsync(ephemeral: true);
-                
+
                 // If the attachment is not an image
                 if (attachment.Width == null) // All images have width properties, all non-images don't
                 {
                     // Respond, and then return
-                    _ = await ModifyOriginalResponseAsync((x) => 
+                    _ = await ModifyOriginalResponseAsync((x) =>
                     {
                         x.Embed = new EmbedBuilder()
                             .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
@@ -227,12 +230,16 @@ namespace Mafiabot
                 // Whether the attempted change was successful
                 if (successful)
                 {
-                    await RespondAsync("✅", ephemeral: true); // If successful, respond with ✅ (indicating as such)
+                    // If successful, respond with ✅ (indicating as such)
+                    _ = await ModifyOriginalResponseAsync((x) =>
+                    {
+                        x.Content = "✅";
+                    });
                 }
                 else
                 {
                     // If unsuccessful, respond with an embed indicating that avatar changes are currently on cooldown
-                    _ = await ModifyOriginalResponseAsync((x) => 
+                    _ = await ModifyOriginalResponseAsync((x) =>
                     {
                         x.Embed = new EmbedBuilder()
                             .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
@@ -281,7 +288,10 @@ namespace Mafiabot
          * The TimeDisplay command.
          */
         [MessageCommand("Time Display")]
-        public async Task TimeConvertAsync(SocketUserMessage message) => await TimeConvertAsync(message.Content); // Run TimeConvertAsync with the message's content
+        public async Task TimeConvertAsync(SocketUserMessage message)
+        {
+            await TimeConvertAsync(message.Content); // Run TimeConvertAsync with the message's content
+        }
 
         [SlashCommand("timedisplay", "Displays the given time with Discord's timestamp formatting")]
         public async Task TimeConvertAsync([Summary("time", "The time to display (e.g. May 8, 1988 5:49 PM) in UTC. Or, input a Unix timestamp (e.g. 1644703914).")] string time)
@@ -400,7 +410,10 @@ namespace Mafiabot
         private static readonly TranslationClient translate = TranslationClient.Create();
 
         [MessageCommand("Translate")]
-        public async Task TranslateAsync(SocketUserMessage message) => await TranslateAsync(message.Content);
+        public async Task TranslateAsync(SocketUserMessage message)
+        {
+            await TranslateAsync(message.Content);
+        }
 
         [SlashCommand("translate", "Repeatedly translates a given string")]
         public async Task TranslateAsync([Summary("text", "The text to translate")] string text, [Summary("cycles", "The number of cycles to translate for, maximum of 50")][MinValue(1)][MaxValue(50)] int cycles = 5)
@@ -595,7 +608,10 @@ namespace Mafiabot
          * The StopArchive command.
          */
         [SlashCommand("stoparchive", "Sets the given channel to no longer be archived.")]
-        public async Task StopArchiveAsync([Summary("source-channel", "The source channel to stop archiving, defaulting to this channel")] SocketTextChannel sourceChannel = default) => await StopArchiveAsync(sourceChannel == default ? null : sourceChannel.Id); // If referred to by channel, extract the ID and continue as usual
+        public async Task StopArchiveAsync([Summary("source-channel", "The source channel to stop archiving, defaulting to this channel")] SocketTextChannel sourceChannel = default)
+        {
+            await StopArchiveAsync(sourceChannel == default ? null : sourceChannel.Id); // If referred to by channel, extract the ID and continue as usual
+        }
 
         [SlashCommand("stoparchive-id", "Sets the given channel to no longer be archived.")]
         public async Task StopArchiveAsync([Summary("source-channel-id", "The ID of the source channel to stop archiving, defaulting to this channel")] ulong? sourceChannelId = null)
@@ -670,8 +686,8 @@ namespace Mafiabot
             // Owner-only debug command that immediately triggers channel purging
             await PurgeChannelsAsync();
             // Respond with ✅
-            _ = await ModifyOriginalResponseAsync((x) => 
-            { 
+            _ = await ModifyOriginalResponseAsync((x) =>
+            {
                 x.Content = "✅";
             });
         }
@@ -765,7 +781,7 @@ namespace Mafiabot
                     foreach (SlashCommandParameterInfo parameter in testCommand.Parameters)
                     {
                         // If the parameter is optional
-                        syntax += !parameter.IsRequired 
+                        syntax += !parameter.IsRequired
                             ? $" [{parameter.Name}]"  // Add the parameter's name surrounded by square brackets
                             : $" <{parameter.Name}>"; // Add the parameter's name surrounded by arrow brackets
                     }
@@ -807,7 +823,7 @@ namespace Mafiabot
                     await RespondAsync(embed: new EmbedBuilder()
                         .WithColor(GetRainbowColor())
                         .WithDescription("❓🗒 Found no valid custom status on that user.")
-                        .Build(), 
+                        .Build(),
                         ephemeral: true);
                     return; // Return
                 }

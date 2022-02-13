@@ -1,28 +1,30 @@
 ﻿using Discord;
 using Discord.Commands;
 using Discord.Interactions;
-using Discord.WebSocket;
 using Discord.Rest;
+using Discord.WebSocket;
 using Mafiabot.Jobs;
 using Newtonsoft.Json;
 using Quartz;
 using Quartz.Impl;
 using Quartz.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using static Mafiabot.Functions;
 using static Mafiabot.Program;
 
 namespace Mafiabot
 {
-    class Program
+    internal class Program
     {
         // Start MainAsync() on startup
         public static void Main()
-        => MainAsync().GetAwaiter().GetResult();
+        {
+            MainAsync().GetAwaiter().GetResult();
+        }
 
         public static DiscordSocketClient _client; // The client
         public static CommandService _commands; // The command service
@@ -188,7 +190,7 @@ namespace Mafiabot
         }
 
         // Creates a function to provide to the discord client and to Quartz, logging their messages both to the console and to the log channels
-        static public async Task LogAsync(LogMessage msg)
+        public static async Task LogAsync(LogMessage msg)
         {
             // Execute asynchronously
             await Task.Run(async () =>
