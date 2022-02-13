@@ -474,7 +474,7 @@ namespace Mafiabot
         {
             return await Task.Run(() =>
             {
-                FileStream image = File.OpenRead($"{Config.EmojiImageFolderPath}\\{fileName}");
+                FileStream image = File.OpenRead($"{Config.EmojiImageFolderPath}{fileName}");
                 return image;
             });
         }
