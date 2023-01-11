@@ -3,8 +3,10 @@ using Discord.WebSocket;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using static Mafiabot.Program;
 
@@ -182,7 +184,7 @@ namespace Mafiabot
 
             // Get the image data in a stream, depending on the ImageReferenceMethod
             Stream imageData = method == ImageReferenceMethod.Url // If the method is via URL
-                ? GetStreamFromImageUrl(reference) // Get the image data via URL
+                ? await GetStreamFromImageUriAsync(reference) // Get the image data via URL
                 : File.OpenRead(reference);   // Otherwise, use the reference as a file path and read that file
 
             // Create a new image using the image data
@@ -211,18 +213,21 @@ namespace Mafiabot
         }
 
         // Returns a stream downloaded from a provided image URL
-        public static Stream GetStreamFromImageUrl(string url)
+        public static async Task<Stream> GetStreamFromImageUriAsync(string uri)
         {
-            // Defines an array of bytes to hold the image data
-            byte[] imageData = null;
-
-            // Create a webclient to use to download the image data
-            using (System.Net.WebClient wc = new())
-                // Set the image data to the downloaded data from the URL
-                imageData = wc.DownloadData(url);
-
-            // Return a new stream made from the image data
-            return new MemoryStream(imageData);
+            // Place into a try-catch block, to handle exceptions
+            try
+            {
+                // Use the HttpClient to get a response from the URI
+                HttpResponseMessage message = await httpClient.GetAsync(uri);
+                // Return the content of that response as a stream
+                return message.Content.ReadAsStream();
+            }
+            catch (Exception ex) // In the event of an error
+            {
+                await LogAsync(new LogMessage(LogSeverity.Warning, "Mafiabot", ex.Message, ex)); // Log it
+                throw; // Throw it (this was more than likely caused by a command, in which case throwing the error will not result in a crash, and will instead just stop execution)
+            }
         }
 
         // Resets the avatar of a provided user (the bot, in 99% of cases)

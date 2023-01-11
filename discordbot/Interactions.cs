@@ -2,10 +2,12 @@
 using Discord.Interactions;
 using Discord.WebSocket;
 using Google.Cloud.Translation.V2;
+using Mafiabot.Posts;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Processing;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -39,66 +41,6 @@ namespace Mafiabot
                     .WithColor(GetRainbowColor()) // Set the color to a random rainbow color
                     .WithDescription($"🏓 {delay} milliseconds delay") // Set the description, including the calculated delay
                     .Build(); // Build the EmbedBuilder
-            });
-        }
-
-        /*
-         * The ChangeStatus command.
-         * To-do:
-         * - Add a way to reset the bot's status
-         */
-        [MessageCommand("Change Status")]
-        public async Task ChangeStatusAsync(SocketUserMessage message)
-        {
-            await ChangeStatusAsync(message.Content); // Execute ChangeStatusAsync() with the message's content
-        }
-
-        // Define an enum for all valid bot activity types
-        public enum BotActivityType
-        {
-            // Bots can have any activity type other than CustomStatus or Streaming
-            Playing = ActivityType.Playing,
-            Listening = ActivityType.Listening,
-            Watching = ActivityType.Watching,
-            Competing = ActivityType.Competing
-        }
-
-        [SlashCommand("changestatus", "Changes the bot's status.")]
-        public async Task ChangeStatusAsync([Summary("status", "The status text to set.")] string newActivity, [Summary("type", "The status type to set.")] BotActivityType activityType = BotActivityType.Playing)
-        {
-            // Defer
-            await DeferAsync(ephemeral: true);
-
-            // Set the activity (of given type) to the supplied string
-            await Context.Client.SetActivityAsync(new Game(newActivity, (ActivityType)activityType));
-            // Create a string to store the response emote in (defaulting to 🎮, for Playing)
-            string responseEmote = "🎮";
-            // Switch statement, holding each of the different activity types
-            switch (activityType)
-            {
-                case BotActivityType.Playing: // ActivityType.Playing and 🎮
-                    // Set the emoji to be 🎮, indicating the activity type
-                    responseEmote = "🎮";
-                    break;
-                case BotActivityType.Listening: // ActivityType.Listening and 🎧
-                    // Set the emoji to be 🎧, indicating the activity type
-                    responseEmote = "🎧";
-                    break;
-                case BotActivityType.Watching: // ActivityType.Watching and 📺
-                    // Set the emoji to be 📺, indicating the activity type
-                    responseEmote = "📺";
-                    break;
-                case BotActivityType.Competing: // ActivityType.Competing and 🥊
-                    // Set the emoji to be 🥊, indicating the activity type
-                    responseEmote = "🥊";
-                    break;
-            }
-
-            // Respond with the emotes
-            _ = await ModifyOriginalResponseAsync((x) =>
-            {
-                // Set the previous response's content to the emotes
-                x.Content = $"✅{responseEmote}";
             });
         }
 
@@ -973,7 +915,7 @@ namespace Mafiabot
                             // Parse the string as a custom emote
                             Emote emote = Emote.Parse(emoteString.Trim());
                             // Get the data for the emote's image
-                            Stream emoteData = GetStreamFromImageUrl(emote.Url);
+                            Stream emoteData = await GetStreamFromImageUriAsync(emote.Url);
 
                             // Set the emote image
                             emoteImage = Image.Load(emoteData);
@@ -1002,6 +944,318 @@ namespace Mafiabot
                     await RespondAsync("🚫", ephemeral: true);
                 }
             });
+        }
+
+        /*
+         * The Post commands
+         */
+        [Group("post", "Modifies posts")]
+        public class PostCommands : InteractionModuleBase<SocketInteractionContext>
+        {
+            /*
+             * The Post Add command
+             */
+            [SlashCommand("add", "Adds a new post")]
+            public async Task AddPostAsync()
+            {
+                // Execute asynchronously
+                await Task.Run(async () =>
+                {
+                    // Create a modal to respond with
+                    Modal modal = new ModalBuilder()
+                        .WithTitle("Add a Post")
+                        .WithCustomId("post-add") // Custom id is "post-add"
+                        // Add a Name field
+                        .AddTextInput(new TextInputBuilder()
+                            .WithLabel("Name")
+                            .WithCustomId("post-name")
+                            .WithStyle(TextInputStyle.Short)
+                            .WithPlaceholder("Enter the name of your new post.")
+                            .WithMaxLength(32)
+                            .WithRequired(true))
+                        // Add a Status Text field
+                        .AddTextInput(new TextInputBuilder()
+                            .WithLabel("Status Text")
+                            .WithCustomId("post-status")
+                            .WithStyle(TextInputStyle.Paragraph)
+                            .WithPlaceholder("This will be shown in the bot's status daily. {N} shows the days left (\"{N} day{s} to go!\")")
+                            .WithMaxLength(64)
+                            .WithRequired(true))
+                        // Add an End Date field
+                        .AddTextInput(new TextInputBuilder()
+                            .WithLabel("End Date")
+                            .WithCustomId("post-date")
+                            .WithStyle(TextInputStyle.Short)
+                            .WithPlaceholder("The last day of the post (MM/DD/YYYY)")
+                            .WithRequired(true)
+                            .WithValue(DateTime.UtcNow.AddDays(1).ToShortDateString())) // Default the end date to tomorrow
+                        .Build(); // Build the modal
+
+                    // Respond with the modal
+                    await Context.Interaction.RespondWithModalAsync(modal);
+                });
+            }
+
+            /// <summary>
+            /// The callback for the Post Add command
+            /// </summary>
+            /// <param name="modal">The modal provided by the callback</param>
+            /// <returns></returns>
+            public static async Task AddPostCallbackAsync(SocketModal modal)
+            {
+                // Get all of the message components
+                SocketMessageComponentData[] data = modal.Data.Components.ToArray();
+
+                // Get the name from the data
+                string name = data[0].Value.Trim();
+                // If there's already a post with the same name
+                if (_posts.Posts.ContainsKey(name))
+                {
+                    // Respond with an embed describing the issue
+                    await modal.RespondAsync(embed: new EmbedBuilder()
+                        .WithDescription($"A post already exists with the name {name}. If you wish to modify that post, use /post edit!")
+                        .WithColor(GetRainbowColor())
+                        .Build(), ephemeral: true);
+                    // Stop execution
+                    return;
+                }
+
+                // Try and parse the date from the provided date text
+                bool parsed = DateTime.TryParse(data[2].Value, out DateTime date);
+                // If it failed to parse
+                if (!parsed) 
+                {
+                    // Respond with an embed describing the issue
+                    await modal.RespondAsync(embed: new EmbedBuilder()
+                        .WithDescription($"Your provided date ({data[2].Value}) didn't make sense to me. I do best with dates formatted MM/DD/YYYY")
+                        .WithColor(GetRainbowColor())
+                        .Build(), ephemeral: true);
+                    // Stop execution
+                    return;
+                }
+
+                // If the provided date is in the past
+                if (DateTime.Compare(DateTime.UtcNow.Date, date) > 0)
+                {
+                    // Respond with an embed describing the issue
+                    await modal.RespondAsync(embed: new EmbedBuilder()
+                        .WithDescription($"Your provided date ({data[2].Value}) seems to be in the past? You can't count down to the past, sorry")
+                        .WithColor(GetRainbowColor())
+                        .Build(), ephemeral: true);
+                    // Stop execution
+                    return;
+                }
+
+                // Create a new Post, with the provided name, display text, and end date
+                Post post = new(name, data[1].Value, date);
+                // Save the post
+                await _posts.SavePostAsync(post);
+
+                // Respond with a success
+                await modal.RespondAsync("✅", ephemeral: true);
+            }
+
+            /*
+             * The Post Delete command
+             */
+            [SlashCommand("delete", "Deletes an existing post")]
+            public async Task DeletePostAsync()
+            {
+                // If there are no posts
+                if (_posts.Posts.Count == 0)
+                {
+                    // Respond to the user, letting them know that there are no posts to delete
+                    await RespondAsync(embed: new EmbedBuilder()
+                        .WithDescription("There are no ongoing posts at the moment. If you really feel like deleting a post, create one first with /post add!")
+                        .WithColor(GetRainbowColor())
+                        .Build());
+
+                    // Stop execution
+                    return;
+                }
+
+                // Create a select menu
+                SelectMenuBuilder menu = new SelectMenuBuilder()
+                    .WithCustomId("post-delete") // Custom id is "post-delete"
+                    .WithPlaceholder("Select the post to delete")
+                    .WithMinValues(1);
+
+                // For each existing post
+                foreach (Post post in _posts.Posts.Values)
+                {
+                    // Add an option for it in the menu
+                    _ = menu.AddOption(post.Name, post.Name); // Match the displayed name and the internal value
+                }
+
+                // Respond with the newly-built menu
+                await RespondAsync(components: new ComponentBuilder().WithSelectMenu(menu).Build(), ephemeral: true);
+            }
+
+            /// <summary>
+            /// The callback for the Post Delete command
+            /// </summary>
+            /// <param name="menu">The select menu provided by the callback</param>
+            /// <returns></returns>
+            public static async Task DeletePostCallbackAsync(SocketMessageComponent menu)
+            {
+                // Find the first name in the values
+                string nameToDelete = menu.Data.Values.First();
+
+                // If that name doesn't exist in the posts
+                if (!_posts.Posts.ContainsKey(nameToDelete))
+                {
+                    // Something seriously weird just happened. The user didn't enter a custom name or anything, they just clicked on a name that the bot provided them
+
+                    // Respond to the user
+                    _ = await menu.ModifyOriginalResponseAsync(x =>
+                    {
+                        x.Components = default;
+                        x.Content = "Something went wrong. That post doesn't exist.";
+                    });
+
+                    // Stop execution
+                    return;
+                }
+
+                // Delete the chosen post
+                await _posts.DeletePostAsync(nameToDelete);
+
+                // Respond with a checkmark
+                await menu.RespondAsync("✅", ephemeral: true);
+            }
+
+            /*
+             * The Post Edit command
+             */
+            [SlashCommand("edit", "Edits an existing post")]
+            public async Task EditPostAsync()
+            {
+                // If there are no posts
+                if (_posts.Posts.Count == 0)
+                {
+                    // Respond
+                    await RespondAsync(embed: new EmbedBuilder()
+                        .WithDescription("There are no ongoing posts at the moment. If you want to create a post, use /post add!")
+                        .WithColor(GetRainbowColor())
+                        .Build());
+
+                    // Stop execution
+                    return;
+                }
+
+                // Create a select menu of all of the posts
+                SelectMenuBuilder menu = new SelectMenuBuilder()
+                    .WithCustomId("post-edit-menu") // Custom id is "post-edit-menu"
+                    .WithPlaceholder("Select the post to edit")
+                    .WithMaxValues(1)
+                    .WithMinValues(1);
+
+                // For each existing post
+                foreach (Post post in _posts.Posts.Values)
+                {
+                    // Add an option for it in the menu
+                    menu.AddOption(post.Name, post.Name);
+                }
+
+                // Respond with the select menu
+                await RespondAsync(components: new ComponentBuilder().WithSelectMenu(menu).Build(), ephemeral: true);
+            }
+
+            /// <summary>
+            /// The select menu callback for the Post Edit command
+            /// </summary>
+            /// <param name="menu">The select menu provided by the callback</param>
+            /// <returns></returns>
+            public static async Task EditPostMenuCallbackAsync(SocketMessageComponent menu)
+            {
+                // Try to get the post the user chose
+                // Have to actually get the post value in order to make the editing work
+                bool exists = _posts.Posts.TryGetValue(menu.Data.Values.First(), out Post toEdit);
+
+                // If that name doesn't exist in the posts
+                if (!exists)
+                {
+                    // Something seriously weird just happened. The user didn't enter a custom name or anything, they just clicked on a name that the bot provided them
+
+                    // Respond to the user
+                    _ = await menu.ModifyOriginalResponseAsync(x =>
+                    {
+                        x.Components = default;
+                        x.Content = "Something went wrong. That post doesn't exist.";
+                    });
+
+                    // Stop execution
+                    return;
+                }
+
+                // Create a modal to respond with
+                // Same as the post-add modal, but with a different custom id, and all of the fields are pre-filled with the chosen post's data
+                Modal modal = new ModalBuilder()
+                    .WithTitle(toEdit.Name)
+                    .WithCustomId($"post-edit-modal {toEdit.Name}") // Custom id is "post-edit-modal", followed by the name of the post being edited (so it may be passed on to the next callback)
+                    // Add a Name field
+                    .AddTextInput(new TextInputBuilder()
+                        .WithLabel("Name")
+                        .WithCustomId("post-name")
+                        .WithStyle(TextInputStyle.Short)
+                        .WithPlaceholder("Enter the name of your new post.")
+                        .WithMaxLength(32)
+                        .WithRequired(true)
+                        .WithValue(toEdit.Name))
+                    // Add a Status Text field
+                    .AddTextInput(new TextInputBuilder()
+                        .WithLabel("Status Text")
+                        .WithCustomId("post-status")
+                        .WithStyle(TextInputStyle.Paragraph)
+                        .WithPlaceholder("This will be shown in the bot's status daily. {N} shows the days left (\"{N} days left!\")")
+                        .WithMaxLength(64)
+                        .WithRequired(true)
+                        .WithValue(toEdit.DisplayText))
+                    // Add an End Date field
+                    .AddTextInput(new TextInputBuilder()
+                        .WithLabel("End Date")
+                        .WithCustomId("post-date")
+                        .WithStyle(TextInputStyle.Short)
+                        .WithPlaceholder("The last day of the post (MM/DD/YYYY)")
+                        .WithRequired(true)
+                        .WithValue(toEdit.EndDate.ToShortDateString()))
+                    .Build(); // Build the modal
+
+                // Respond with the modal
+                await menu.RespondWithModalAsync(modal);
+            }
+
+            /// <summary>
+            /// The modal callback for the Post Edit command
+            /// </summary>
+            /// <param name="modal">The modal provided by the callback</param>
+            /// <returns></returns>
+            public static async Task EditPostModalCallbackAsync(SocketModal modal)
+            {
+                // Get the name from the custom ID of the modal
+                string name = modal.Data.CustomId.Split(' ').Last();
+                // Get the new name by following the same process as in AddPostCallbackAsync()
+                string newName = modal.Data.Components.First().Value.Trim();
+
+                // Check to make sure that the editor didn't accidentally rename the post to the name of an existing post
+                if (newName != name && _posts.Posts.ContainsKey(newName))
+                {
+                    // Respond describing the issue
+                    await modal.RespondAsync(embed: new EmbedBuilder()
+                        .WithDescription($"You tried to rename that post to {newName}, but there's already a post by that name. If you want to rename that post to {newName}, delete the existing post first with /post delete!")
+                        .WithColor(GetRainbowColor())
+                        .Build());
+
+                    // Stop execution
+                    return;
+                }
+
+                // Delete the post that has now been edited
+                await _posts.DeletePostAsync(name);
+
+                // Add this post as if it's brand new
+                await AddPostCallbackAsync(modal);
+            }
         }
     }
 }

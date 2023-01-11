@@ -3,6 +3,7 @@ using Discord.Commands;
 using Discord.Interactions;
 using Discord.Rest;
 using Discord.WebSocket;
+using Mafiabot.Posts;
 using Mafiabot.Jobs;
 using Newtonsoft.Json;
 using Quartz;
@@ -11,10 +12,12 @@ using Quartz.Logging;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Reflection;
 using System.Threading.Tasks;
 using static Mafiabot.Functions;
 using static Mafiabot.Program;
+using System.Linq;
 
 namespace Mafiabot
 {
@@ -29,6 +32,8 @@ namespace Mafiabot
         public static DiscordSocketClient _client; // The client
         public static CommandService _commands; // The command service
         public static InteractionService _interactions; // The interaction service
+        public static PostService _posts; // The post service
+        public static readonly HttpClient httpClient = new();
 
         public static async Task MainAsync()
         {
@@ -37,22 +42,24 @@ namespace Mafiabot
             if (!File.Exists(configPath)) // If the config file does not exist
             {
                 // Create a default config
-                Dictionary<string, dynamic> defaultConfig = new();
-                defaultConfig.Add("Development", false);
-                defaultConfig.Add("DevelopmentServerId", 0);
+                Dictionary<string, dynamic> defaultConfig = new()
+                {
+                    { "Development", false },
+                    { "DevelopmentServerId", 0 },
 
-                defaultConfig.Add("DefaultAvatarPath", "Avatar.png"); // Default file path
-                defaultConfig.Add("ArchivalChannelsPath", "archivalChannels.json"); // Default file path
-                defaultConfig.Add("ImagesOnlyPath", "imagesOnly.json"); // Default file path
-                defaultConfig.Add("LogChannelsPath", "logChannels.json"); // Default file path
-                defaultConfig.Add("PrideFlagsPath", "prideFlags.json"); // Default file path
-                defaultConfig.Add("PurgeChannelsPath", "purgeChannels.json"); // Default file path
-                defaultConfig.Add("PurgeChannelsPath", "purgeChannels.json"); // Default file path
-                defaultConfig.Add("EmojiImageFolderPath", "EmojiImages"); // Default file path
+                    { "DefaultAvatarPath", "Avatar.png" }, // Default file path
+                    { "ArchivalChannelsPath", "archivalChannels.json" }, // Default file path
+                    { "ImagesOnlyPath", "imagesOnly.json" }, // Default file path
+                    { "LogChannelsPath", "logChannels.json" }, // Default file path
+                    { "PrideFlagsPath", "prideFlags.json" }, // Default file path
+                    { "PurgeChannelsPath", "purgeChannels.json" }, // Default file path
+                    { "EmojiImageFolderPath", "EmojiImages" }, // Default file path
+                    { "PostsPath", "posts.json" }, // Default file path
 
-                defaultConfig.Add("Token", "YOUR-TOKEN-HERE"); // Field to input the twitch bot token
-                defaultConfig.Add("GoogleProjectId", "YOUR-PROJECT-ID-HERE"); // Field to input the google project ID
-                defaultConfig.Add("GoogleKey", "YOUR-GOOGLE-KEY-FILE-PATH-HERE"); // Field to input the google key's file path
+                    { "Token", "YOUR-TOKEN-HERE" }, // Field to input the discord bot token
+                    { "GoogleProjectId", "YOUR-PROJECT-ID-HERE" }, // Field to input the google project ID
+                    { "GoogleKey", "YOUR-GOOGLE-KEY-FILE-PATH-HERE" } // Field to input the google key's file path
+                };
 
                 // Create and write text to the file
                 File.WriteAllText(configPath, JsonConvert.SerializeObject(defaultConfig));
@@ -99,6 +106,13 @@ namespace Mafiabot
                 File.WriteAllText(Config.PurgeChannelsPath, JsonConvert.SerializeObject(Array.Empty<ulong>()));
             }
 
+            // If there is no posts file
+            if (!File.Exists(Config.PostsPath))
+            {
+                // Create and write to the file
+                File.WriteAllText(Config.PostsPath, JsonConvert.SerializeObject(new Dictionary<string, Post>()));
+            }
+
             _client = new DiscordSocketClient(new DiscordSocketConfig()
             {
                 GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildPresences,
@@ -117,19 +131,19 @@ namespace Mafiabot
                 DefaultRunMode = Discord.Interactions.RunMode.Async // Set the RunMode to execute asynchronously
             }); // Create the interaction service
 
-            CommandHandler handler = new(_client, _commands); // Create the command handler
             InteractionHandler interactionHandler = new(_client, _interactions); // Create the interaction handler
             Bouncer bouncer = new(_client); // Create the bouncer
             Archiver archiver = new(_client); // Create the archiver
+            _posts = new(Config.PostsPath, _client); // Create the post service
 
             Environment.SetEnvironmentVariable("GOOGLE_CLOUD_PROJECT", Config.GoogleProjectId); // Set the "GOOGLE_CLOUD_PROJECT" environment variable
             Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", Config.GoogleKey); // Set the "GOOGLE_APPLICATION_CREDENTIALS" environment variable
 
-            // Install the handler, interaction handler, bouncer, and archiver
-            await handler.InstallCommandsAsync();
+            // Install the interaction handler, bouncer, archiver, and post service
             await interactionHandler.InstallInteractionsAsync();
             bouncer.InstallBouncer();
             archiver.InstallArchiver();
+            _posts.InstallPosts();
 
             _client.Log += LogAsync; // Install the log function
 
@@ -156,7 +170,7 @@ namespace Mafiabot
                 .Build();
 
             // Create the activity reset job
-            IJobDetail resetActivity = JobBuilder.Create<ActivityResetJob>()
+            IJobDetail resetActivity = JobBuilder.Create<PostUpdateJob>()
                 .WithIdentity("resetActivity", "mafiabot")
                 .Build();
 
@@ -331,6 +345,7 @@ namespace Mafiabot
                 PrideFlagsPath = (string)loaded["PrideFlagsPath"];
                 PurgeChannelsPath = (string)loaded["PurgeChannelsPath"];
                 EmojiImageFolderPath = (string)loaded["EmojiImageFolderPath"];
+                PostsPath = (string)loaded["PostsPath"];
 
                 Token = (string)loaded["Token"];
                 GoogleProjectId = (string)loaded["GoogleProjectId"];
@@ -347,62 +362,10 @@ namespace Mafiabot
             public static string PrideFlagsPath; // The file path to the pride flags
             public static string PurgeChannelsPath; // The file path to the purge channels
             public static string EmojiImageFolderPath; // The file path to a folder containing an image for every unicode emoji in png format. Images should be named following this format: $"{Unicode code point of first rune, excluding the U+}[-{Unicode code point of all other runes, excluding all U+s}].png"
-
+            public static string PostsPath; // THe file path to the posts
             public static string Token; // The bot's token
             public static string GoogleProjectId; // The Google Cloud project ID
             public static string GoogleKey; // The key file path for interaction with Google Cloud Translate
-        }
-    }
-
-    /**
-     * CommandHandler is DEPRECATED
-     */
-    public class CommandHandler
-    {
-        // Variables to store the client and the CommandService
-        private readonly DiscordSocketClient _client;
-        private readonly CommandService _commands;
-
-        // Retrieve client and CommandService via constructor
-        public CommandHandler(DiscordSocketClient client, CommandService commands)
-        {
-            _commands = commands;
-            _client = client;
-        }
-
-        public async Task InstallCommandsAsync()
-        {
-            // Hook the MessageReceived event into the command handler
-            _client.MessageReceived += HandleCommandAsync;
-
-            // Load the command modules
-            await _commands.AddModulesAsync(assembly: Assembly.GetEntryAssembly(),
-                                            services: null);
-        }
-
-        public async Task HandleCommandAsync(SocketMessage messageParam)
-        {
-            // Don't process the command if it was a system message
-            if (messageParam is not SocketUserMessage message) return;
-
-            // Create a number to track where the prefix ends and the command begins
-            int argPos = 0;
-
-            // Determine if the message is a command based on the prefix and make sure no bots trigger commands, unless prefixed with the string "[NO_BOT_OVERRIDE]"
-            if (!(message.HasCharPrefix('!', ref argPos) ||
-                message.HasMentionPrefix(_client.CurrentUser, ref argPos) ||
-                message.HasStringPrefix("[NO_BOT_OVERRIDE]", ref argPos)) ||
-                (message.Author.IsBot && !message.HasStringPrefix("[NO_BOT_OVERRIDE]", ref argPos)))
-                return;
-
-            // Create a WebSocket-based command context based on the message
-            SocketCommandContext context = new(_client, message);
-
-            // Execute the command with the command context, along with the service provider for precondition checks
-            await _commands.ExecuteAsync(
-                context: context,
-                argPos: argPos,
-                services: null);
         }
     }
 
@@ -432,6 +395,7 @@ namespace Mafiabot
             _client.AutocompleteExecuted += HandleAutocompleteAsync;
             _client.ButtonExecuted += HandleButtonAsync;
             _client.SelectMenuExecuted += HandleMenuAsync;
+            _client.ModalSubmitted += HandleModalAsync;
 
             // Register all interactions
             _ = await _interactions.AddModulesAsync(
@@ -484,8 +448,34 @@ namespace Mafiabot
 
         public async Task HandleMenuAsync(SocketMessageComponent component)
         {
-            SocketInteractionContext context = new(_client, component);
-            await _interactions.ExecuteCommandAsync(context, services: null);
+            switch (component.Data.CustomId)
+            {
+                case "post-delete":
+                    await Interactions.PostCommands.DeletePostCallbackAsync(component);
+                    break;
+                case "post-edit-menu":
+                    await Interactions.PostCommands.EditPostMenuCallbackAsync(component);
+                    break;
+                default:
+                    throw new Exception($"HandleMenuAsync() received an incorrect SelectMenu callback. SelectMenu id {component.Data.CustomId} is unsupported.");
+            }
+        }
+
+        public async Task HandleModalAsync(SocketModal modal)
+        {
+            string id = modal.Data.CustomId.Split(' ').First();
+
+            switch (id)
+            {
+                case "post-add":
+                    await Interactions.PostCommands.AddPostCallbackAsync(modal);
+                    break;
+                case "post-edit-modal":
+                    await Interactions.PostCommands.EditPostModalCallbackAsync(modal);
+                    break;
+                default:
+                    throw new Exception($"HandleModalAsync() received an incorrect modal callback. Modal id {modal.Data.CustomId} is unsupported.");
+            }
         }
     }
 
