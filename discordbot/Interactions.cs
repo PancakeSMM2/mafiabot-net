@@ -1257,5 +1257,30 @@ namespace Mafiabot
                 await AddPostCallbackAsync(modal);
             }
         }
+
+        /// <summary>
+        /// Has the bot echo a particular message.
+        /// </summary>
+        /// <param name="message">The message to echo.</param>
+        /// <returns></returns>
+        [RequireOwner]
+        [SlashCommand("echo", "Echoes a given message.")]
+        public async Task EchoAsync(string message)
+        {
+            // Double-check that a string *was* indeed provided, just to prevent any shenanigans
+            if (message == null || message == "")
+            {
+                // Respond explaining the issue
+                await Context.Interaction.RespondAsync("Message required. Execution halted.", ephemeral: true);
+                // Stop execution
+                return;
+            }
+
+            // Echo the message in the same channel the command was sent in, allowing mentions (this command is owner-only, so I can trust myself with these things)
+            _ = await Context.Interaction.Channel.SendMessageAsync(message, allowedMentions: AllowedMentions.All);
+
+            // Respond with a success
+            await Context.Interaction.RespondAsync("Echoed!", ephemeral: true);
+        }
     }
 }
